@@ -1,1 +1,48 @@
+name: Generate Jabra release signing key (one-time)
 
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse public repositories
+        env:
+          REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          if [ "$REPOSITORY_PRIVATE" != 'true' ]; then
+            echo 'For safety, this workflow only runs in a private repository.'
+            exit 1
+          fi
+      - name: Generate key and one-time secret transfer file
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p signing-output
+          STORE_PASSWORD=$(openssl rand -hex 24)
+          KEY_ALIAS=jabra-release
+          keytool -genkeypair -noprompt \
+            -keystore "$RUNNER_TEMP/jabra-release.p12" \
+            -storetype PKCS12 -storepass "$STORE_PASSWORD" -keypass "$STORE_PASSWORD" \
+            -alias "$KEY_ALIAS" -keyalg RSA -keysize 3072 -validity 10000 \
+            -dname 'CN=Jabra Extension Hub, OU=Android, O=Jabra Extension Hub, L=NA, ST=NA, C=US'
+          KEYSTORE_B64=$(base64 -w 0 "$RUNNER_TEMP/jabra-release.p12")
+          {
+            echo 'PRIVATE SIGNING DATA — keep private; do not share or commit this file.'
+            echo "JABRA_SIGNING_KEYSTORE_BASE64=$KEYSTORE_B64"
+            echo "JABRA_SIGNING_STORE_PASSWORD=$STORE_PASSWORD"
+            echo "JABRA_SIGNING_KEY_ALIAS=$KEY_ALIAS"
+            echo "JABRA_SIGNING_KEY_PASSWORD=$STORE_PASSWORD"
+          } > signing-output/GITHUB_SECRETS.txt
+          chmod 600 signing-output/GITHUB_SECRETS.txt
+      - name: Upload one-time setup file
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jabra-private-signing-setup
+          path: signing-output/GITHUB_SECRETS.txt
+          retention-days: 1
+          if-no-files-found: error
