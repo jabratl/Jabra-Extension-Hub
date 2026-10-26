@@ -99,6 +99,12 @@
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout" />
 
+        <activity
+            android:name=".PlayerActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Hub"
+            android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout" />
+
         <service
             android:name=".DownloadService"
             android:exported="false"

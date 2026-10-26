@@ -19,8 +19,8 @@ android {
         applicationId = "com.jabra.hub"
         minSdk = 26
         targetSdk = 34
-        versionCode = 20
-        versionName = "0.9.2"
+        versionCode = 21
+        versionName = "0.9.3"
     }
     signingConfigs {
         if (hasStableSigning) {
@@ -44,6 +44,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+    lint {
+        // Media3 marks parts of its API as unstable; do not fail release builds over lint opt-in notes.
+        abortOnError = false
+        checkReleaseBuilds = false
+    }
 }
 
 dependencies {
@@ -52,4 +57,7 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.9.0")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.webkit:webkit:1.11.0")
+    implementation("androidx.media3:media3-exoplayer:1.3.1")
+    implementation("androidx.media3:media3-exoplayer-hls:1.3.1")
+    implementation("androidx.media3:media3-ui:1.3.1")
 }

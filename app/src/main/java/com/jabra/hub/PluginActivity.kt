@@ -500,6 +500,22 @@ class PluginActivity : AppCompatActivity() {
             return true
         }
 
+        /** Play a media link (direct file or HLS) in the Hub's built-in player. http(s) only. */
+        @JavascriptInterface
+        fun mediaPlay(url: String, referer: String, title: String): Boolean {
+            val u = url.trim()
+            if (!(u.startsWith("https://") || u.startsWith("http://"))) return false
+            main.post {
+                ctx.startActivity(
+                    Intent(ctx, PlayerActivity::class.java)
+                        .putExtra("url", u)
+                        .putExtra("referer", referer.take(2000))
+                        .putExtra("title", title.take(120))
+                )
+            }
+            return true
+        }
+
         /** Payload from this plugin's floating-bubble button (JSON: text, source, ts), or null. */
         @JavascriptInterface
         fun floaterGet(): String? = Floater.load(ctx, pluginId)

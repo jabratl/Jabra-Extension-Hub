@@ -20,6 +20,7 @@ object JabraApiContract {
         "floater",
         "browser",
         "mediaDownload",
+        "mediaPlayer",
         "apiVersionInfo"
     )
 }
