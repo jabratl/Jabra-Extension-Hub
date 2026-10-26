@@ -18,6 +18,8 @@ object JabraApiContract {
         "chapterIntake",
         "clipboardScan",
         "floater",
+        "browser",
+        "mediaDownload",
         "apiVersionInfo"
     )
 }

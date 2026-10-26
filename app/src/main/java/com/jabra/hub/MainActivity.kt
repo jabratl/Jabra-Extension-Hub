@@ -97,6 +97,7 @@ class MainActivity : AppCompatActivity() {
         menu.menu.add(0, 6, 5, if (BubbleService.isEnabled(this)) "Floating bubble: turn OFF" else "Floating bubble: turn ON")
         menu.menu.add(0, 7, 6, "Check for app update")
         menu.menu.add(0, 8, 7, "Plugin store · updates")
+        menu.menu.add(0, 9, 8, "Browser · catch media")
         menu.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 1 -> showStorage()
@@ -113,6 +114,7 @@ class MainActivity : AppCompatActivity() {
                 4 -> showApiContract()
                 7 -> Updater.checkApp(this, false)
                 8 -> Updater.checkPlugins(this, store, false) { refresh() }
+                9 -> startActivity(Intent(this, BrowserActivity::class.java))
                 5 -> startActivity(Intent(this, IntakeActivity::class.java).setAction(ChapterIntake.ACTION_SCAN_CLIPBOARD))
                 6 -> {
                     val on = !BubbleService.isEnabled(this)

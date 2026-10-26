@@ -1,0 +1,10 @@
+<resources>
+    <color name="br_bg">#141629</color>
+    <color name="br_surface">#1B1E38</color>
+    <color name="br_card">#222648</color>
+    <color name="br_stroke">#30356B</color>
+    <color name="br_accent">#FF8A5B</color>
+    <color name="br_teal">#5EEAD4</color>
+    <color name="br_text">#F4F4FF</color>
+    <color name="br_sub">#A3A8D6</color>
+</resources>

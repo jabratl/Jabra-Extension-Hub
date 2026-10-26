@@ -478,6 +478,28 @@ class PluginActivity : AppCompatActivity() {
         @JavascriptInterface
         fun intakeClear(): Boolean = ChapterIntake.clear(ctx)
 
+        /** Open the built-in browser (http/https only). Media found on pages can be downloaded there. */
+        @JavascriptInterface
+        fun openBrowser(url: String): Boolean {
+            val u = url.trim()
+            if (!(u.startsWith("https://") || u.startsWith("http://"))) return false
+            main.post { ctx.startActivity(Intent(ctx, BrowserActivity::class.java).putExtra("url", u)) }
+            return true
+        }
+
+        /** Download a media file or stream to Downloads/JabraHub. Returns false unless the URL is http(s). */
+        @JavascriptInterface
+        fun mediaDownload(url: String, referer: String, title: String): Boolean {
+            val u = url.trim()
+            if (!(u.startsWith("https://") || u.startsWith("http://"))) return false
+            val kind = MediaKind.of(u) ?: "file"
+            val ua = android.webkit.WebSettings.getDefaultUserAgent(ctx)
+            Downloader(ctx.applicationContext).start(Media(u, kind, referer.take(2000), title.take(120)), ua) { st, done ->
+                if (done) main.post { Toast.makeText(ctx, st, Toast.LENGTH_LONG).show() }
+            }
+            return true
+        }
+
         /** Payload from this plugin's floating-bubble button (JSON: text, source, ts), or null. */
         @JavascriptInterface
         fun floaterGet(): String? = Floater.load(ctx, pluginId)
