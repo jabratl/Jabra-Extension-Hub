@@ -92,6 +92,8 @@ class MainActivity : AppCompatActivity() {
         menu.menu.add(0, 2, 1, "About Jabra Hub")
         menu.menu.add(0, 3, 2, "Diagnostics & support")
         menu.menu.add(0, 4, 3, "Developer tools · API contract")
+        menu.menu.add(0, 5, 4, "Scan copied text (clipboard)")
+        menu.menu.add(0, 6, 5, if (BubbleService.isEnabled(this)) "Floating bubble: turn OFF" else "Floating bubble: turn ON")
         menu.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 1 -> showStorage()
@@ -106,6 +108,15 @@ class MainActivity : AppCompatActivity() {
                 }
                 3 -> showDiagnostics()
                 4 -> showApiContract()
+                5 -> startActivity(Intent(this, IntakeActivity::class.java).setAction(ChapterIntake.ACTION_SCAN_CLIPBOARD))
+                6 -> {
+                    val on = !BubbleService.isEnabled(this)
+                    if (BubbleService.toggle(this, on)) {
+                        Toast.makeText(this, if (on) "Bubble on. Copy text, then tap J." else "Bubble off.", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(this, "Allow \"Display over other apps\" for Jabra, come back, then turn the bubble on again.", Toast.LENGTH_LONG).show()
+                    }
+                }
             }
             true
         }

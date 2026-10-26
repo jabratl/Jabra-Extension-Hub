@@ -16,6 +16,7 @@ object JabraApiContract {
         "toast",
         "diagnostics",
         "chapterIntake",
+        "clipboardScan",
         "apiVersionInfo"
     )
 }

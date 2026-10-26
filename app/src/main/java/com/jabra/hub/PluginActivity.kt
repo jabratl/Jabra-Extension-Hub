@@ -465,6 +465,15 @@ class PluginActivity : AppCompatActivity() {
         @JavascriptInterface
         fun intakeGet(): String? = ChapterIntake.loadRaw(ctx)
 
+        /** Ask the Hub to read the clipboard and send it back as an intake (same flow as the bubble). */
+        @JavascriptInterface
+        fun scanClipboard(): Boolean = try {
+            main.post {
+                ctx.startActivity(Intent(ctx, IntakeActivity::class.java).setAction(ChapterIntake.ACTION_SCAN_CLIPBOARD))
+            }
+            true
+        } catch (_: Exception) { false }
+
         /** Forget the pending intake once the plugin has taken it. */
         @JavascriptInterface
         fun intakeClear(): Boolean = ChapterIntake.clear(ctx)

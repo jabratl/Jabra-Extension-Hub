@@ -2,6 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="true"
@@ -34,6 +38,15 @@
             android:exported="false"
             android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout" />
+
+        <service
+            android:name=".BubbleService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Floating shortcut bubble that the user taps to scan copied text" />
+        </service>
 
         <!-- "Jabra Scan": text-selection menu, Share sheet and Open-with entry point. -->
         <activity

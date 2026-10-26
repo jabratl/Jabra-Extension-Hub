@@ -27,6 +27,7 @@ import java.util.zip.ZipInputStream
  */
 object ChapterIntake {
     const val NOVEL_PLUGIN_ID = "jabra-novel-assistant"
+    const val ACTION_SCAN_CLIPBOARD = "com.jabra.hub.SCAN_CLIPBOARD"
     private const val MAX_CHARS = 3_000_000
     private const val MAX_FILE_BYTES = 40_000_000
 
@@ -108,7 +109,16 @@ object ChapterIntake {
     // ---------- shared text / web link ----------
     private val urlRe = Regex("https?://\\S+")
 
-    private fun fromSharedText(raw: String, subject: String?): Intake {
+    /** Text copied by the user (any app). A lone link is fetched; a short single line is a glossary lookup. */
+    fun fromClipboard(raw: String): Intake {
+        val t = raw.trim()
+        require(t.isNotEmpty()) { "The clipboard is empty. Copy some text first." }
+        val isLink = urlRe.find(t) != null
+        if (!isLink && t.length <= 60 && !t.contains('\n')) return build(t, t, "clipboard", "Clipboard", "lookup")
+        return fromSharedText(t, null, "clipboard")
+    }
+
+    private fun fromSharedText(raw: String, subject: String?, label: String = "share"): Intake {
         val t = raw.trim()
         require(t.isNotEmpty()) { "Nothing to read in the shared content" }
         val m = urlRe.find(t)
@@ -120,7 +130,7 @@ object ChapterIntake {
                 return build(title.ifBlank { rest.ifBlank { host } }, text, "web", host, "chapter")
             }
         }
-        return build(subject?.takeIf { it.isNotBlank() } ?: firstLine(t), t, "share", "Shared text", "chapter")
+        return build(subject?.takeIf { it.isNotBlank() } ?: firstLine(t), t, label, if (label == "clipboard") "Clipboard" else "Shared text", "chapter")
     }
 
     private fun firstLine(t: String): String = t.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }?.take(100) ?: "Shared text"
