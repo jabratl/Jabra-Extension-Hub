@@ -44,6 +44,7 @@
     <pre id="info">…</pre>
   </div>
 
+<script src="jabra-compat.js"></script>
 <script>
   var api = window.JabraAPI;
   function hi() { api ? api.toast("Hello from your plugin!") : alert("Open this inside the app"); }
@@ -51,7 +52,10 @@
   function inc() { var c = load() + 1; if (api) api.setItem("count", String(c)); show(c); }
   function show(c) { document.getElementById("n").textContent = c; }
   show(load());
-  document.getElementById("info").textContent = api ? api.info() : "JabraAPI not found";
+  document.getElementById("info").textContent = window.JabraCompat ? JSON.stringify(JabraCompat.hostInfo(), null, 2) : (api ? api.info() : "JabraAPI not found");
+  window.addEventListener("error", function (event) {
+    try { if (window.JabraCompat) JabraCompat.recordDiagnostic("sample-js-error", event.message || "Unknown JavaScript error"); } catch (_) {}
+  });
 </script>
 </body>
 </html>

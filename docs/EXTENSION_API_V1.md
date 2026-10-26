@@ -18,7 +18,7 @@ This document defines the supported host API for extensions running in Jabra Ext
 
 | Method | Contract | Notes |
 |---|---|---|
-| `info()` | Returns JSON text describing host, API version and capabilities | Parse with `JSON.parse` inside `try/catch` |
+| `info()` | Returns JSON text describing host version, API version, capabilities and limitations | Parse with `JSON.parse` inside `try/catch`; legacy v1 boolean fields remain available |
 | `capabilities()` | Returns a JSON array as text | Feature detection; do not rely only on version strings |
 | `storageGet(key)` | Returns string or null | Per-extension private storage |
 | `storageSet(key, value)` | Returns boolean | Keep values reasonably sized; check result |
@@ -31,7 +31,17 @@ This document defines the supported host API for extensions running in Jabra Ext
 | `copyText(text)` | Returns whether request was accepted | Clipboard work happens on Android main thread; a true return does not guarantee the user kept the clipboard contents |
 | `shareText(text, title)` | Returns whether request was accepted | Opens system Sharesheet |
 | `toast(message)` | Shows short Android message | Optional convenience only |
+| `recordDiagnostic(event, detail)` | Returns boolean; appends a bounded, local-only diagnostic entry | Do not log passwords, tokens, personal content, or full documents; the user must choose to share logs |
+| `JabraCompat.storageGet/Set/Remove` | Helper wrappers around native scoped storage with safe browser fallback | Helper functions, not direct bridge methods; check return values |
+
+`info()` also returns `hostVersion`, `hostPackage`, `androidApiLevel`, `minSupportedApiVersion`, and a `limitations` array. The earlier v1 fields `durableStorage`, `fileExport`, `fileShare`, `clipboardWrite`, and `textShare` are retained for backward compatibility.
 | HTML `<input type="file">` | Opens Android document picker through the WebView file chooser | Use FileReader to read the selected file; handle cancel/error |
+
+## Capability names currently advertised by API v1
+
+`storage`, `fileExport`, `fileShare`, `fileImportPicker`, `clipboardWrite`, `textShare`, `toast`, `diagnostics`, and `apiVersionInfo`.
+
+The list is a compatibility contract, not a promise that every operation succeeds under every device condition. Check method presence, check boolean results, and handle cancellation, unavailable handlers, storage failures, and share-sheet failures.
 
 ## File export fallback pattern
 
@@ -92,6 +102,27 @@ async function shareBlob(name, blob) {
 
 Use `<input type="file" accept=".json,application/json">`, then `FileReader` to read the file. Validate its schema, version, required fields and reasonable size before showing a preview. Do not replace live data until validation succeeds and the user confirms. Provide merge and replace as clearly separate actions when appropriate.
 
+## Manifest compatibility metadata
+
+The following optional fields are supported by the Hub:
+
+```json
+{
+  "id": "example-plugin",
+  "name": "Example Plugin",
+  "version": "1.0.0",
+  "entry": "index.html",
+  "minJabraApiVersion": 1,
+  "requiredCapabilities": ["storage", "apiVersionInfo"]
+}
+```
+
+- If `minJabraApiVersion` is absent, it defaults to `1` for compatibility with existing plugins.
+- If the minimum API version is newer than the installed Hub, installation is rejected before the existing plugin is replaced.
+- `requiredCapabilities` must be an array of capability names supported by the Hub. Unknown required capabilities cause a clear install error instead of a plugin failing later at runtime.
+- Optional capabilities should not be declared as required; feature-detect them at runtime.
+- These fields are compatibility metadata, not a security permission system. Installed plugin JavaScript is still code and should come from a trusted source.
+
 ## Capability detection
 
 ```js
@@ -121,6 +152,9 @@ These must not be assumed to exist: background execution, scheduled jobs, arbitr
 - Test import valid, invalid, oversized, and cancelled files.
 - Test export, share, and restore independently.
 - Test missing optional API and browser fallback.
+- Confirm a plugin requiring API v2 is rejected by API v1 without changing an existing installation.
+- Confirm an unknown required capability is rejected before install.
+- Confirm `recordDiagnostic` writes only a local bounded entry and no automatic upload occurs.
 - Test denied permissions, offline mode, and interrupted operations.
 - Confirm failures are visible and never reported as success.
 

@@ -286,7 +286,7 @@ class PluginActivity : AppCompatActivity() {
         @JavascriptInterface
         fun storageKeys(prefix: String): String = try {
             val keys = (dataRoot.listFiles() ?: emptyArray()).asSequence()
-                .filter { it.isFile && it.name.startsWith("d_") && !it.name.endsWith(".tmp") }
+                .filter { it.isFile && it.name.startsWith("d_") && !it.name.endsWith(".tmp") && !it.name.endsWith(".bak") }
                 .mapNotNull { f -> try { String(android.util.Base64.decode(f.name.removePrefix("d_"), android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING), Charsets.UTF_8) } catch (_: Exception) { null } }
                 .filter { it.startsWith(prefix) }.sorted().toList()
             org.json.JSONArray(keys).toString()
@@ -439,25 +439,42 @@ class PluginActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
-        fun capabilities(): String = org.json.JSONArray(listOf(
-            "storage", "fileExport", "fileShare", "fileImportPicker", "clipboardWrite", "textShare", "toast"
-        )).toString()
+        fun capabilities(): String = org.json.JSONArray(JabraApiContract.capabilities).toString()
+
+        /** Append a bounded, local-only diagnostic event from an extension. */
+        @JavascriptInterface
+        fun recordDiagnostic(event: String, detail: String): Boolean = try {
+            val safeEvent = event.replace(Regex("[\\r\\n\\t]"), " ").trim().take(120)
+            val safeDetail = detail.replace(Regex("[\\r\\n\\t]"), " ").trim().take(500)
+            if (safeEvent.isBlank()) false else {
+                AppDiagnostics.record(ctx, "Extension[$pluginId] $safeEvent: $safeDetail")
+                true
+            }
+        } catch (_: Exception) { false }
 
         @JavascriptInterface
-        fun info(): String = JSONObject()
-            .put("app", "Jabra Extension Hub")
-            .put("android", Build.VERSION.SDK_INT)
-            .put("pluginId", pluginId)
-            .put("apiVersion", 1)
-            .put("durableStorage", true)
-            .put("fileExport", true)
-            .put("fileShare", true)
-            .put("clipboardWrite", true)
-            .put("textShare", true)
-            .put("capabilities", org.json.JSONArray(listOf(
-                "storage", "fileExport", "fileShare", "fileImportPicker", "clipboardWrite", "textShare", "toast"
-            )))
-            .toString()
+        fun info(): String {
+            val hostVersion = try {
+                ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: "unknown"
+            } catch (_: Exception) { "unknown" }
+            return JSONObject()
+                .put("app", "Jabra Extension Hub")
+                .put("hostVersion", hostVersion)
+                .put("hostPackage", ctx.packageName)
+                .put("androidApiLevel", Build.VERSION.SDK_INT)
+                .put("pluginId", pluginId)
+                .put("apiVersion", JabraApiContract.API_VERSION)
+                .put("minSupportedApiVersion", JabraApiContract.MIN_SUPPORTED_API_VERSION)
+                // Keep the original v1 booleans for plugins written against the earlier contract.
+                .put("durableStorage", true)
+                .put("fileExport", true)
+                .put("fileShare", true)
+                .put("clipboardWrite", true)
+                .put("textShare", true)
+                .put("capabilities", org.json.JSONArray(JabraApiContract.capabilities))
+                .put("limitations", org.json.JSONArray(listOf("noBackgroundExecution", "noCloudSync", "noChromeExtensionRuntime", "noArbitraryUrlDownloads")))
+                .toString()
+        }
     }
 
     private fun persistentLocalStorageScript(): String = """

@@ -82,6 +82,7 @@ class MainActivity : AppCompatActivity() {
         menu.menu.add(0, 1, 0, "Storage & data")
         menu.menu.add(0, 2, 1, "About Jabra Hub")
         menu.menu.add(0, 3, 2, "Diagnostics & support")
+        menu.menu.add(0, 4, 3, "Developer tools · API contract")
         menu.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 1 -> showStorage()
@@ -95,10 +96,32 @@ class MainActivity : AppCompatActivity() {
                         .setPositiveButton("OK", null).show()
                 }
                 3 -> showDiagnostics()
+                4 -> showApiContract()
             }
             true
         }
         menu.show()
+    }
+
+
+    private fun showApiContract() {
+        val capabilities = JabraApiContract.capabilities.joinToString("\n• ", prefix = "• ")
+        val message = "Jabra Extension API v${JabraApiContract.API_VERSION}\nHost version: ${packageManager.getPackageInfo(packageName, 0).versionName}\n\nSupported capabilities\n$capabilities\n\nCompatibility rules\n• Declare minJabraApiVersion only when needed.\n• Declare requiredCapabilities for features the plugin cannot work without.\n• Feature-detect optional APIs and handle false/null results.\n• Do not assume Chrome extension APIs, background execution, cloud sync or arbitrary URL downloads.\n• Plugin data is scoped by stable plugin ID; do not change IDs casually.\n\nThis screen describes the host contract. It does not certify a plugin as safe."
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Developer tools · API contract")
+            .setMessage(message)
+            .setPositiveButton("Share contract") { _, _ ->
+                try {
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_SUBJECT, "Jabra Extension API v${JabraApiContract.API_VERSION}")
+                        putExtra(Intent.EXTRA_TEXT, message)
+                    }
+                    startActivity(Intent.createChooser(intent, "Share API contract"))
+                } catch (e: Exception) { AppDiagnostics.record(this, "Share API contract failed", e) }
+            }
+            .setNegativeButton("Close", null)
+            .show()
     }
 
     private fun showDiagnostics() {
@@ -307,6 +330,8 @@ class MainActivity : AppCompatActivity() {
             append("ID: ").append(p.id).append('\n')
             append("Version: ").append(p.version).append('\n')
             append("Category: ").append(p.category).append('\n')
+            append("Minimum Jabra API: v").append(p.minJabraApiVersion).append('\n')
+            if (p.requiredCapabilities.isNotEmpty()) append("Required capabilities: ").append(p.requiredCapabilities.joinToString(", ")).append('\n')
             append("Entry: ").append(p.entry).append('\n')
             append("Plugin files: ").append(size).append('\n')
             append("Saved data: ").append(savedDataSize)

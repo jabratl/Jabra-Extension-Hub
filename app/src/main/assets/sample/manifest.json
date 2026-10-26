@@ -4,5 +4,7 @@
   "version": "1.0",
   "description": "A starter plugin that tests the app bridge: toast, storage and info.",
   "icon": "👋",
-  "entry": "index.html"
+  "entry": "index.html",
+  "minJabraApiVersion": 1,
+  "requiredCapabilities": ["storage", "apiVersionInfo"]
 }

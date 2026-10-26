@@ -15,7 +15,9 @@ data class Plugin(
     val description: String,
     val icon: String,
     val entry: String,
-    val category: String = "Other"
+    val category: String = "Other",
+    val minJabraApiVersion: Int = 1,
+    val requiredCapabilities: List<String> = emptyList()
 )
 
 class PluginStore(private val ctx: Context) {
@@ -37,7 +39,12 @@ class PluginStore(private val ctx: Context) {
             description = j.optString("description", ""),
             icon = j.optString("icon", "🧩").ifEmpty { "🧩" },
             entry = j.optString("entry", "index.html"),
-            category = normalizeCategory(j.optString("category", "Other"))
+            category = normalizeCategory(j.optString("category", "Other")),
+            minJabraApiVersion = j.optInt("minJabraApiVersion", 1),
+            requiredCapabilities = try {
+                val array = j.optJSONArray("requiredCapabilities")
+                if (array == null) emptyList() else (0 until array.length()).map { array.optString(it) }.filter { it.isNotBlank() }
+            } catch (_: Exception) { emptyList() }
         )
     } catch (e: Exception) {
         null
@@ -175,6 +182,20 @@ class PluginStore(private val ctx: Context) {
             if (name.length > MAX_NAME_LENGTH) throw IllegalStateException("Plugin name is too long")
             val version = j.optString("version", "1.0").trim()
             if (version.isEmpty() || version.length > MAX_VERSION_LENGTH) throw IllegalStateException("Plugin version is invalid")
+            val minApi = if (j.has("minJabraApiVersion")) j.optInt("minJabraApiVersion", -1) else JabraApiContract.MIN_SUPPORTED_API_VERSION
+            if (minApi < 1) throw IllegalStateException("minJabraApiVersion must be a positive integer")
+            if (minApi > JabraApiContract.API_VERSION) {
+                throw IllegalStateException("This plugin requires Jabra API v$minApi, but this Hub supports v${JabraApiContract.API_VERSION}. Update Jabra Extension Hub first.")
+            }
+            val requiredArray = j.optJSONArray("requiredCapabilities")
+            if (j.has("requiredCapabilities") && requiredArray == null) throw IllegalStateException("requiredCapabilities must be a JSON array of capability names")
+            val requiredCapabilities = if (requiredArray == null) emptyList() else (0 until requiredArray.length()).map { i ->
+                val capability = requiredArray.optString(i, "").trim()
+                if (capability.isEmpty()) throw IllegalStateException("requiredCapabilities contains an empty or invalid capability")
+                capability
+            }.distinct()
+            val unsupported = requiredCapabilities.filterNot { JabraApiContract.capabilities.contains(it) }
+            if (unsupported.isNotEmpty()) throw IllegalStateException("This plugin requires unsupported Jabra API capability: ${unsupported.joinToString()}. Update the plugin or Hub.")
             val entry = j.optString("entry", "index.html").trim()
             if (entry.isEmpty() || entry.startsWith("/") || entry.contains('\\') || entry.split('/').any { it == ".." || it == "." }) {
                 throw IllegalStateException("Plugin entry path is invalid")

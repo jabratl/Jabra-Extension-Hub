@@ -4,10 +4,10 @@ Use this after each GitHub Actions APK build. Source checks are not a substitute
 
 ## Build and identity
 - [ ] GitHub Actions `assembleDebug` completes successfully.
-- [ ] Downloaded artifact name includes the current version, e.g. `Jabra-Extension-Hub-v0.4.0-debug`.
+- [ ] Downloaded artifact name includes the current version, e.g. `Jabra-Extension-Hub-v0.5.0-debug`.
 - [ ] APK filename includes the same version.
 - [ ] Launcher label is `Jabra Extension Hub` (not `app-debug`).
-- [ ] About dialog reports the same version as `app/build.gradle.kts`.
+- [ ] About dialog reports the same version as `app/build.gradle.kts` (0.5.0 for this release).
 
 ## Install/update safety
 - [ ] Existing installation updates without uninstalling or clearing app data.
@@ -37,3 +37,15 @@ Use this after each GitHub Actions APK build. Source checks are not a substitute
 
 ## Trust boundary
 - [ ] Confirm only trusted plugin ZIPs are installed. ZIP validation protects against common archive path/size attacks but does not make arbitrary plugin JavaScript trustworthy.
+
+
+## API v1 compatibility and developer tools (v0.5.0)
+- [ ] App menu → Developer tools · API contract shows API v1 and current host version.
+- [ ] Sharing the API contract opens Android Sharesheet only after explicit user action.
+- [ ] Existing plugins still see the legacy `info()` boolean fields and API version 1.
+- [ ] Sample plugin reports current host version and runs without errors.
+- [ ] `recordDiagnostic` creates a local diagnostic line and never uploads automatically.
+- [ ] A plugin declaring `minJabraApiVersion: 2` is rejected before replacing an existing installation.
+- [ ] A plugin declaring an unknown `requiredCapabilities` item is rejected with an actionable message.
+- [ ] A valid plugin using `minJabraApiVersion: 1` and known required capabilities installs successfully.
+- [ ] GitHub Actions source validation passes before Gradle build.
