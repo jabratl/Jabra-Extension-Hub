@@ -15,6 +15,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -34,7 +35,7 @@ class PlayerActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val url = intent.getStringExtra("url")
-        if (url.isNullOrBlank() || !(url.startsWith("http://") || url.startsWith("https://"))) {
+        if (url.isNullOrBlank() || !(url.startsWith("http://") || url.startsWith("https://") || url.startsWith("content://") || url.startsWith("file://"))) {
             finish()
             return
         }
@@ -96,7 +97,7 @@ class PlayerActivity : AppCompatActivity() {
             .setDefaultRequestProperties(headers)
 
         val p = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(http))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(this, http)))
             .build()
         player = p
         view.player = p

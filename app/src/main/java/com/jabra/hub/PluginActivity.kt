@@ -500,6 +500,13 @@ class PluginActivity : AppCompatActivity() {
             return true
         }
 
+        /** Open the Hub's Downloads screen (progress, cancel, play). */
+        @JavascriptInterface
+        fun openDownloads(): Boolean {
+            main.post { ctx.startActivity(Intent(ctx, DownloadsActivity::class.java)) }
+            return true
+        }
+
         /** Play a media link (direct file or HLS) in the Hub's built-in player. http(s) only. */
         @JavascriptInterface
         fun mediaPlay(url: String, referer: String, title: String): Boolean {

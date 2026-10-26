@@ -22,15 +22,20 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebStorage
 import android.webkit.WebView
+import android.webkit.ValueCallback
 import android.webkit.WebViewClient
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.PopupMenu
+import android.widget.RadioButton
+import android.widget.RadioGroup
+import android.widget.ScrollView
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.addCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -55,6 +60,12 @@ class BrowserActivity : AppCompatActivity() {
     private var desktop = false
     private var blockedCount = 0
     private var defaultUa = ""
+
+    private var fileCb: ValueCallback<Array<Uri>>? = null
+    private val picker = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        fileCb?.onReceiveValue(if (uris.isNullOrEmpty()) null else uris.toTypedArray())
+        fileCb = null
+    }
 
     private var customView: View? = null
     private var customCb: WebChromeClient.CustomViewCallback? = null
@@ -163,6 +174,23 @@ class BrowserActivity : AppCompatActivity() {
                 transport.webView = temp
                 resultMsg.sendToTarget()
                 return true
+            }
+
+            override fun onShowFileChooser(
+                webView: WebView?,
+                filePathCallback: ValueCallback<Array<Uri>>?,
+                fileChooserParams: FileChooserParams?
+            ): Boolean {
+                fileCb?.onReceiveValue(null)
+                fileCb = filePathCallback
+                return try {
+                    picker.launch(arrayOf("*/*"))
+                    true
+                } catch (_: Exception) {
+                    fileCb?.onReceiveValue(null)
+                    fileCb = null
+                    false
+                }
             }
 
             override fun onShowCustomView(view: View, callback: CustomViewCallback) {
@@ -299,6 +327,8 @@ class BrowserActivity : AppCompatActivity() {
         m.menu.add(0, 9, 8, "Share link")
         m.menu.add(0, 10, 9, "Copy link")
         m.menu.add(0, 11, 10, "Clear browsing data")
+        val active = DlJobs.activeCount()
+        m.menu.add(0, 12, 11, if (active > 0) "Downloads ($active running)" else "Downloads")
         m.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 1 -> if (pageUrl.startsWith("http")) {
@@ -333,6 +363,7 @@ class BrowserActivity : AppCompatActivity() {
                     Toast.makeText(this, "Link copied", Toast.LENGTH_SHORT).show()
                 }
                 11 -> confirmClear()
+                12 -> startActivity(Intent(this, DownloadsActivity::class.java))
             }
             true
         }
@@ -427,22 +458,127 @@ class BrowserActivity : AppCompatActivity() {
                 )
             }
             btn.setOnClickListener {
-                btn.isEnabled = false
-                btn.alpha = 0.4f
-                status.visibility = View.VISIBLE
-                status.text = "Starting..."
-                downloader.start(m, web.settings.userAgentString) { s, done ->
-                    runOnUiThread {
-                        status.text = s
-                        if (done) {
-                            btn.isEnabled = true
-                            btn.alpha = 1f
-                        }
-                    }
-                }
+                if (m.kind == "hls") askHls(m, btn, status) else startDl(m, DlOptions(), btn, status)
             }
             panelList.addView(v)
         }
+    }
+
+    private fun startDl(m: Media, opts: DlOptions, btn: TextView, status: TextView) {
+        btn.isEnabled = false
+        btn.alpha = 0.4f
+        status.visibility = View.VISIBLE
+        status.text = "Starting..."
+        downloader.start(m, web.settings.userAgentString, opts) { s, done ->
+            runOnUiThread {
+                status.text = s
+                if (done) {
+                    btn.isEnabled = true
+                    btn.alpha = 1f
+                }
+            }
+        }
+        Toast.makeText(this, "Added to Downloads (menu > Downloads)", Toast.LENGTH_SHORT).show()
+    }
+
+    /** HLS: read the stream, then let the user pick quality and an optional clip. */
+    private fun askHls(m: Media, btn: TextView, status: TextView) {
+        btn.isEnabled = false
+        btn.alpha = 0.4f
+        status.visibility = View.VISIBLE
+        status.text = "Reading stream..."
+        val ua = web.settings.userAgentString
+        Thread {
+            try {
+                val probe = downloader.probe(m, ua)
+                runOnUiThread {
+                    btn.isEnabled = true
+                    btn.alpha = 1f
+                    status.text = ""
+                    status.visibility = View.GONE
+                    showHlsDialog(m, probe, btn, status)
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    btn.isEnabled = true
+                    btn.alpha = 1f
+                    status.text = "Failed: " + (e.message ?: "cannot read stream")
+                }
+            }
+        }.start()
+    }
+
+    private fun parseTime(t: String): Double {
+        val s = t.trim()
+        if (s.isEmpty()) return 0.0
+        var total = 0.0
+        for (part in s.split(":")) total = total * 60 + (part.trim().toDoubleOrNull() ?: return -1.0)
+        return total
+    }
+
+    private fun showHlsDialog(m: Media, probe: HlsProbe, btn: TextView, status: TextView) {
+        val d = resources.displayMetrics.density
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding((20 * d).toInt(), (8 * d).toInt(), (20 * d).toInt(), 0)
+
+        val group = RadioGroup(this)
+        val ids = ArrayList<Int>()
+        val urls = ArrayList<String?>()
+        fun addOpt(label: String, url: String?) {
+            val rb = RadioButton(this)
+            rb.id = View.generateViewId()
+            rb.text = label
+            group.addView(rb)
+            ids.add(rb.id)
+            urls.add(url)
+        }
+        if (probe.variants.isEmpty()) {
+            addOpt("Only one quality available", null)
+        } else {
+            addOpt("Best  (" + probe.variants[0].label + ")", probe.variants[0].url)
+            for (i in 1 until probe.variants.size) addOpt(probe.variants[i].label, probe.variants[i].url)
+        }
+        group.check(ids[0])
+        box.addView(group)
+
+        val dur = probe.durationSeconds.toInt()
+        val hint = TextView(this)
+        hint.text = "Only a part (optional). Length: " + (if (dur >= 3600) "${dur / 3600}:" else "") +
+            String.format("%02d:%02d", (dur % 3600) / 60, dur % 60) + "  ·  type 90, 1:30 or 1:02:30"
+        hint.textSize = 12f
+        hint.setPadding(0, (12 * d).toInt(), 0, 0)
+        box.addView(hint)
+
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        val from = EditText(this)
+        from.hint = "From"
+        from.inputType = android.text.InputType.TYPE_CLASS_TEXT
+        val to = EditText(this)
+        to.hint = "To (empty = end)"
+        to.inputType = android.text.InputType.TYPE_CLASS_TEXT
+        row.addView(from, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        row.addView(to, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        box.addView(row)
+
+        val sv = ScrollView(this)
+        sv.addView(box)
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Download stream")
+            .setView(sv)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Download") { _, _ ->
+                val a = parseTime(from.text.toString())
+                val b = parseTime(to.text.toString())
+                if (a < 0 || b < 0 || (b > 0 && b <= a)) {
+                    Toast.makeText(this, "Check the clip times", Toast.LENGTH_LONG).show()
+                } else {
+                    val idx = ids.indexOf(group.checkedRadioButtonId).coerceAtLeast(0)
+                    startDl(m, DlOptions(urls[idx], a, b), btn, status)
+                }
+            }
+            .show()
     }
 
     override fun onPause() {

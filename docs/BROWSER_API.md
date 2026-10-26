@@ -6,3 +6,4 @@
 Direct files (mp4, webm, mp3, m4a, vtt, srt ...) and unencrypted HLS playlists are supported. Encrypted/DRM streams are not.
 Feature-detect with `JabraAPI.capabilities()` first.
 - `JabraAPI.mediaPlay(url, referer, title)` -> boolean (capability `mediaPlayer`, Hub 0.9.3+). Opens the built-in player (direct files and unencrypted HLS). Returns false if the URL is not http(s).
+- `JabraAPI.openDownloads()` -> boolean (capability `downloadManager`, Hub 0.9.4+). Opens the Downloads screen.
