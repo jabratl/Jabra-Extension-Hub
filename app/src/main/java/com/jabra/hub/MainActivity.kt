@@ -83,6 +83,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         refresh()
+        Updater.autoCheck(this, store) { refresh() }
     }
 
 
@@ -94,6 +95,8 @@ class MainActivity : AppCompatActivity() {
         menu.menu.add(0, 4, 3, "Developer tools · API contract")
         menu.menu.add(0, 5, 4, "Scan copied text (clipboard)")
         menu.menu.add(0, 6, 5, if (BubbleService.isEnabled(this)) "Floating bubble: turn OFF" else "Floating bubble: turn ON")
+        menu.menu.add(0, 7, 6, "Check for app update")
+        menu.menu.add(0, 8, 7, "Plugin store · updates")
         menu.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 1 -> showStorage()
@@ -108,6 +111,8 @@ class MainActivity : AppCompatActivity() {
                 }
                 3 -> showDiagnostics()
                 4 -> showApiContract()
+                7 -> Updater.checkApp(this, false)
+                8 -> Updater.checkPlugins(this, store, false) { refresh() }
                 5 -> startActivity(Intent(this, IntakeActivity::class.java).setAction(ChapterIntake.ACTION_SCAN_CLIPBOARD))
                 6 -> {
                     val on = !BubbleService.isEnabled(this)
