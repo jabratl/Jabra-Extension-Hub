@@ -78,7 +78,7 @@ class MainActivity : AppCompatActivity() {
                 1 -> showStorage()
                 2 -> MaterialAlertDialogBuilder(this)
                     .setTitle("Jabra Extension Hub")
-                    .setMessage("Version 0.3.3\n\nA modular Android plugin hub. Import ZIP plugins, search installed tools, view plugin details, and export plugins for backup or transfer.\n\nPlugin code runs in Android WebView. Features requiring native Android support may need a Hub update.")
+                    .setMessage("Version 0.3.4\n\nA modular Android plugin hub. Import ZIP plugins, search installed tools, view plugin details, and export plugins for backup or transfer.\n\nPlugin code runs in Android WebView. Features requiring native Android support may need a Hub update.")
                     .setPositiveButton("OK", null).show()
             }
             true

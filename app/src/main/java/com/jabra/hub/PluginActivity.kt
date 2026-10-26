@@ -28,6 +28,7 @@ import android.widget.Toast
 import androidx.activity.addCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.webkit.WebViewAssetLoader
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.appbar.MaterialToolbar
 import org.json.JSONObject
 
