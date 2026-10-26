@@ -31,6 +31,7 @@ import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import android.util.Base64
+import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -87,12 +88,21 @@ class PluginActivity : AppCompatActivity() {
         web.addJavascriptInterface(Bridge(this, id), "JabraAPI")
         // Persist standard localStorage calls in app-private files, scoped to this plugin.
         // The script runs before plugin JavaScript, so ordinary web plugins need no changes.
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-            WebViewCompat.addDocumentStartJavaScript(
-                web,
-                persistentLocalStorageScript(),
-                setOf("https://$HOST/*")
-            )
+        // This enhancement is optional. Some Android System WebView versions report the
+        // feature as supported but may still reject script registration at runtime. Never let
+        // that optional storage shim crash the entire plugin Activity.
+        try {
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+                WebViewCompat.addDocumentStartJavaScript(
+                    web,
+                    persistentLocalStorageScript(),
+                    setOf("https://$HOST/*")
+                )
+            } else {
+                Log.w(TAG, "DOCUMENT_START_SCRIPT unavailable; plugin native storage API remains available")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Could not install optional localStorage persistence shim", e)
         }
         web.webChromeClient = object : WebChromeClient() {
             override fun onShowFileChooser(
@@ -179,6 +189,15 @@ class PluginActivity : AppCompatActivity() {
                 errorResponse: WebResourceResponse
             ) {
                 if (request.isForMainFrame && errorResponse.statusCode >= 400) showError()
+            }
+
+            @Suppress("OVERRIDE_DEPRECATION")
+            override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail): Boolean {
+                Log.e(TAG, "WebView renderer exited; didCrash=${detail.didCrash()}")
+                progress.visibility = View.GONE
+                errorView.visibility = View.VISIBLE
+                errorView.text = "This plugin's WebView stopped unexpectedly. Go back to the Hub and reopen it. If it repeats, update Android System WebView and share the crash log."
+                return true
             }
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
@@ -351,5 +370,6 @@ class PluginActivity : AppCompatActivity() {
 
     companion object {
         private const val HOST = "appassets.androidplatform.net"
+        private const val TAG = "JabraPluginActivity"
     }
 }
