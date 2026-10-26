@@ -1,0 +1,64 @@
+name: Publish plugin store
+
+on:
+  push:
+    paths:
+      - 'store/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build catalog.json from store/*.zip
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import glob, hashlib, json, os, re, zipfile
+          plugins = []
+          for path in sorted(glob.glob('store/*.zip')):
+              fname = os.path.basename(path)
+              if not re.fullmatch(r'[A-Za-z0-9._-]+', fname):
+                  print('SKIP (use letters, digits, dot, dash, underscore only):', fname)
+                  continue
+              with zipfile.ZipFile(path) as z:
+                  names = [n for n in z.namelist()
+                           if n.endswith('manifest.json') and n.count('/') <= 1 and not n.startswith('__MACOSX')]
+                  if len(names) != 1:
+                      print('SKIP (need exactly one manifest.json):', fname)
+                      continue
+                  m = json.loads(z.read(names[0]).decode('utf-8'))
+              raw = (m.get('id') or m.get('name') or '').strip().lower()
+              pid = re.sub(r'[^a-z0-9_-]', '-', raw).strip('-_')
+              if not pid or not m.get('name') or not m.get('version'):
+                  print('SKIP (manifest needs id/name/version):', fname)
+                  continue
+              plugins.append({
+                  'id': pid,
+                  'name': m['name'],
+                  'version': str(m['version']),
+                  'description': m.get('description', ''),
+                  'file': fname,
+                  'sha256': hashlib.sha256(open(path, 'rb').read()).hexdigest(),
+              })
+              print('OK:', pid, m['version'])
+          json.dump({'schemaVersion': 1, 'plugins': plugins}, open('catalog.json', 'w', encoding='utf-8'), indent=2)
+          PY
+
+      - name: Upload to the "store" release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          gh release view store >/dev/null 2>&1 || gh release create store --prerelease \
+            --title "Jabra plugin store" --notes "Plugin packages used by the in-app plugin store. Do not delete."
+          files=(store/*.zip)
+          gh release upload store catalog.json "${files[@]}" --clobber
