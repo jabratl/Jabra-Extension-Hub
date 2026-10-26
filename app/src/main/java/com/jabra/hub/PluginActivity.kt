@@ -3,6 +3,10 @@ package com.jabra.hub
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.content.ContentValues
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.provider.MediaStore
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
@@ -27,6 +31,7 @@ import android.widget.EditText
 import android.widget.Toast
 import androidx.activity.addCallback
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.FileProvider
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
@@ -308,15 +313,149 @@ class PluginActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun toast(message: String) {
-            main.post { Toast.makeText(ctx, message, Toast.LENGTH_SHORT).show() }
+            main.post { Toast.makeText(ctx, message.take(1000), Toast.LENGTH_SHORT).show() }
         }
+
+        /** Copy plain text to Android clipboard. The operation is scheduled on the main thread. */
+        @JavascriptInterface
+        fun copyText(text: String): Boolean = try {
+            require(text.length <= 2_000_000) { "Clipboard text is too large" }
+            main.post {
+                try {
+                    val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("Jabra Extension", text))
+                    Toast.makeText(ctx, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    Log.e("JabraClipboard", "Clipboard write failed for plugin $pluginId", e)
+                    Toast.makeText(ctx, "Could not copy text", Toast.LENGTH_LONG).show()
+                }
+            }
+            true
+        } catch (e: Exception) {
+            Log.e("JabraClipboard", "Clipboard request failed for plugin $pluginId", e)
+            false
+        }
+
+        /** Share plain text through Android's system Sharesheet. */
+        @JavascriptInterface
+        fun shareText(text: String, title: String): Boolean = try {
+            require(text.length <= 2_000_000) { "Shared text is too large" }
+            val safeTitle = title.take(180).ifBlank { "Share from Jabra Extension Hub" }
+            main.post {
+                try {
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, text)
+                        putExtra(Intent.EXTRA_TITLE, safeTitle)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    ctx.startActivity(Intent.createChooser(intent, safeTitle).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                } catch (e: Exception) {
+                    Log.e("JabraShare", "Text share failed for plugin $pluginId", e)
+                    Toast.makeText(ctx, "Could not share text", Toast.LENGTH_LONG).show()
+                }
+            }
+            true
+        } catch (e: Exception) {
+            Log.e("JabraShare", "Text share request failed for plugin $pluginId", e)
+            false
+        }
+
+        /** Save an exported plugin file to the public Downloads collection on Android 10+. */
+        @JavascriptInterface
+        fun exportBase64File(name: String, base64Data: String, mimeType: String): Boolean {
+            return try {
+                require(name.isNotBlank() && name.length <= 180) { "Invalid file name" }
+                require(base64Data.length <= 80_000_000) { "Export is too large" }
+                val safeName = name.substringAfterLast('/').substringAfterLast('\\')
+                    .replace(Regex("[^A-Za-z0-9._ -]"), "_").take(140).ifBlank { "jabra-export.json" }
+                val mime = mimeType.takeIf { it.contains('/') && it.length <= 120 } ?: "application/octet-stream"
+                val bytes = Base64.decode(base64Data, Base64.DEFAULT)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val values = ContentValues().apply {
+                        put(MediaStore.MediaColumns.DISPLAY_NAME, safeName)
+                        put(MediaStore.MediaColumns.MIME_TYPE, mime)
+                        put(MediaStore.MediaColumns.RELATIVE_PATH, "Download/Jabra Extension Hub")
+                        put(MediaStore.MediaColumns.IS_PENDING, 1)
+                    }
+                    val uri = ctx.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                        ?: throw IllegalStateException("Android could not create the export file")
+                    try {
+                        ctx.contentResolver.openOutputStream(uri, "w")?.use { it.write(bytes) }
+                            ?: throw IllegalStateException("Could not write the export file")
+                        values.clear()
+                        values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                        ctx.contentResolver.update(uri, values, null, null)
+                    } catch (e: Exception) {
+                        ctx.contentResolver.delete(uri, null, null)
+                        throw e
+                    }
+                    main.post { Toast.makeText(ctx, "Saved to Downloads/Jabra Extension Hub/$safeName", Toast.LENGTH_LONG).show() }
+                    true
+                } else {
+                    // Older Android versions: save a shareable copy and let the user choose Files/Drive.
+                    shareBytes(safeName, bytes, mime)
+                    true
+                }
+            } catch (e: Exception) {
+                Log.e("JabraExport", "Export failed for plugin $pluginId", e)
+                main.post { Toast.makeText(ctx, "Export failed: ${e.message ?: "unknown error"}", Toast.LENGTH_LONG).show() }
+                false
+            }
+        }
+
+        /** Open Android's share sheet with an actual content:// URI, not a temporary file:// URL. */
+        @JavascriptInterface
+        fun shareBase64File(name: String, base64Data: String, mimeType: String): Boolean {
+            return try {
+                require(name.isNotBlank() && name.length <= 180) { "Invalid file name" }
+                require(base64Data.length <= 80_000_000) { "Share file is too large" }
+                val safeName = name.substringAfterLast('/').substringAfterLast('\\')
+                    .replace(Regex("[^A-Za-z0-9._ -]"), "_").take(140).ifBlank { "jabra-share.json" }
+                val mime = mimeType.takeIf { it.contains('/') && it.length <= 120 } ?: "application/octet-stream"
+                val bytes = Base64.decode(base64Data, Base64.DEFAULT)
+                shareBytes(safeName, bytes, mime)
+                true
+            } catch (e: Exception) {
+                Log.e("JabraShare", "Share failed for plugin $pluginId", e)
+                main.post { Toast.makeText(ctx, "Could not share file: ${e.message ?: "unknown error"}", Toast.LENGTH_LONG).show() }
+                false
+            }
+        }
+
+        private fun shareBytes(name: String, bytes: ByteArray, mime: String) {
+            val shareDir = File(ctx.cacheDir, "shared_exports").apply { mkdirs() }
+            val file = File(shareDir, name)
+            FileOutputStream(file).use { out -> out.write(bytes); out.fd.sync() }
+            val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", file)
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = mime
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_TITLE, name)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            main.post { ctx.startActivity(Intent.createChooser(intent, "Share $name").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        }
+
+        @JavascriptInterface
+        fun capabilities(): String = org.json.JSONArray(listOf(
+            "storage", "fileExport", "fileShare", "fileImportPicker", "clipboardWrite", "textShare", "toast"
+        )).toString()
 
         @JavascriptInterface
         fun info(): String = JSONObject()
             .put("app", "Jabra Extension Hub")
             .put("android", Build.VERSION.SDK_INT)
             .put("pluginId", pluginId)
+            .put("apiVersion", 1)
             .put("durableStorage", true)
+            .put("fileExport", true)
+            .put("fileShare", true)
+            .put("clipboardWrite", true)
+            .put("textShare", true)
+            .put("capabilities", org.json.JSONArray(listOf(
+                "storage", "fileExport", "fileShare", "fileImportPicker", "clipboardWrite", "textShare", "toast"
+            )))
             .toString()
     }
 
