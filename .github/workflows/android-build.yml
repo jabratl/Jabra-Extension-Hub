@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -118,3 +118,35 @@ jobs:
           path: ${{ env.APK_PATH }}
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish release for in-app updates
+        if: env.BUILD_VARIANT == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          export TAG="v${VERSION_NAME}-b${GITHUB_RUN_NUMBER}"
+          cp "$APK_PATH" Jabra-Extension-Hub.apk
+          python3 - <<'PY'
+          import hashlib, json, os, re
+          ver = os.environ['VERSION_NAME']
+          gradle = open('app/build.gradle.kts', encoding='utf-8').read()
+          code = int(re.search(r'versionCode\s*=\s*(\d+)', gradle).group(1))
+          sha = hashlib.sha256(open('Jabra-Extension-Hub.apk', 'rb').read()).hexdigest()
+          notes_file = 'README_JABRA_V%s.txt' % ver
+          notes = open(notes_file, encoding='utf-8').read().strip()[:900] if os.path.exists(notes_file) else 'New version.'
+          repo = os.environ['GITHUB_REPOSITORY']
+          tag = os.environ['TAG']
+          json.dump({
+              'versionCode': code,
+              'versionName': ver,
+              'sha256': sha,
+              'apkUrl': 'https://github.com/%s/releases/download/%s/Jabra-Extension-Hub.apk' % (repo, tag),
+              'notes': notes,
+          }, open('app-update.json', 'w', encoding='utf-8'), indent=2)
+          open('release-notes.txt', 'w', encoding='utf-8').write(notes)
+          PY
+          gh release create "$TAG" Jabra-Extension-Hub.apk app-update.json \
+            --title "Jabra Extension Hub v${VERSION_NAME}" --notes-file release-notes.txt
