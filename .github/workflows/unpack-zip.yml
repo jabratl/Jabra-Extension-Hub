@@ -1,0 +1,49 @@
+name: Unpack ZIP
+
+# Repo root-e kono .zip upload korle (project.zip ba update.zip)
+# ei workflow oita extract kore sob file/folder root-e boshiye commit kore dey.
+on:
+  push:
+    paths: ['*.zip']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract ZIP into repo root
+        shell: bash
+        run: |
+          shopt -s nullglob
+          zips=(*.zip)
+          if [ ${#zips[@]} -eq 0 ]; then echo "Root-e kono zip nai."; exit 0; fi
+          for z in "${zips[@]}"; do
+            echo "== $z =="
+            rm -rf /tmp/x && mkdir /tmp/x
+            unzip -q -o "$z" -x '__MACOSX/*' '.github/*' -d /tmp/x
+            src=/tmp/x
+            if [ "$(ls -A /tmp/x | wc -l)" -eq 1 ]; then
+              only="/tmp/x/$(ls -A /tmp/x)"
+              if [ -d "$only" ] && { [ -f "$only/settings.gradle" ] || [ -f "$only/settings.gradle.kts" ]; }; then
+                src="$only"   # zip-er vitore ekta extra folder thakle flatten
+              fi
+            fi
+            cp -a "$src"/. .
+            rm -f "$z"
+          done
+          [ -f .gitignore ] || printf '*.iml\n.gradle/\nbuild/\nlocal.properties\n.idea/\n*.jks\n*.keystore\n' > .gitignore
+
+      - name: Commit and push
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then echo "Kono change nai."; exit 0; fi
+          git commit -m "Unpack uploaded ZIP into repo root"
+          git push
