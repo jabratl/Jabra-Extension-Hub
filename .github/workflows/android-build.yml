@@ -1,0 +1,66 @@
+name: Android Build
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['*.zip', 'README.md']
+  workflow_run:
+    workflows: ["Unpack ZIP"]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  build:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Check project layout
+        shell: bash
+        run: |
+          if [ ! -f settings.gradle ] && [ ! -f settings.gradle.kts ]; then
+            echo "::error::settings.gradle(.kts) root-e nai. Age project.zip upload kore 'Unpack ZIP' chalao."
+            exit 1
+          fi
+          ls -la
+
+      - name: Setup Gradle (wrapper thakle)
+        if: hashFiles('gradlew') != ''
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Setup Gradle 8.7 (wrapper na thakle)
+        if: hashFiles('gradlew') == ''
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Build debug APK
+        shell: bash
+        run: |
+          if [ -f gradlew ]; then
+            chmod +x gradlew
+            ./gradlew assembleDebug --stacktrace 2>&1 | tee build.log
+          else
+            gradle assembleDebug --stacktrace 2>&1 | tee build.log
+          fi
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jabra-Extension-Hub-debug-apk
+          path: '**/build/outputs/apk/debug/*.apk'
+          if-no-files-found: error
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: ignore
