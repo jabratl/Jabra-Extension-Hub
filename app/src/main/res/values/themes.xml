@@ -9,4 +9,5 @@
         <item name="android:navigationBarColor">@color/bg</item>
         <item name="android:textColorPrimary">@color/text</item>
     </style>
+    <style name="Theme.Hub.Intake" parent="@android:style/Theme.Translucent.NoTitleBar" />
 </resources>

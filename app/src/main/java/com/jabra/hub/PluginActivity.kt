@@ -49,6 +49,7 @@ class PluginActivity : AppCompatActivity() {
     private lateinit var progress: View
     private lateinit var errorView: TextView
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
+    private var currentPluginId: String = ""
 
     private val filePicker = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
         filePathCallback?.onReceiveValue(if (uri != null) arrayOf(uri) else null)
@@ -65,6 +66,7 @@ class PluginActivity : AppCompatActivity() {
             finish()
             return
         }
+        currentPluginId = id
         val name = intent.getStringExtra("name") ?: id
         val entry = (intent.getStringExtra("entry") ?: "index.html").trimStart('/')
 
@@ -221,6 +223,27 @@ class PluginActivity : AppCompatActivity() {
         }
 
         web.loadUrl("https://$HOST/plugins/$id/$entry")
+    }
+
+    /**
+     * Called when "Jabra Scan" sends new text while this screen is already open (singleTop).
+     * Same plugin: tell the page to pick up the new text. Different plugin: switch to it.
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        val newId = intent.getStringExtra("id") ?: return
+        setIntent(intent)
+        if (!::web.isInitialized) return
+        if (newId == currentPluginId) {
+            web.evaluateJavascript("try{if(window.__jabraIntake)window.__jabraIntake()}catch(e){}", null)
+        } else {
+            currentPluginId = newId
+            val entry = (intent.getStringExtra("entry") ?: "index.html").trimStart('/')
+            findViewById<MaterialToolbar>(R.id.toolbar).title = intent.getStringExtra("name") ?: newId
+            web.removeJavascriptInterface("JabraAPI")
+            web.addJavascriptInterface(Bridge(this, newId), "JabraAPI")
+            web.loadUrl("https://$HOST/plugins/$newId/$entry")
+        }
     }
 
     private fun showError() {
@@ -437,6 +460,14 @@ class PluginActivity : AppCompatActivity() {
             }
             main.post { ctx.startActivity(Intent.createChooser(intent, "Share $name").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
         }
+
+        /** Text the user sent via "Jabra Scan" (selection, share, file, web link) as JSON, or null. */
+        @JavascriptInterface
+        fun intakeGet(): String? = ChapterIntake.loadRaw(ctx)
+
+        /** Forget the pending intake once the plugin has taken it. */
+        @JavascriptInterface
+        fun intakeClear(): Boolean = ChapterIntake.clear(ctx)
 
         @JavascriptInterface
         fun capabilities(): String = org.json.JSONArray(JabraApiContract.capabilities).toString()

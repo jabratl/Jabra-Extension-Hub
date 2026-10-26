@@ -29,3 +29,7 @@ This is a UI foundation, not a claim that every Phase 4 requirement is complete.
 
 ## Safety and testing
 Never place signing keys/passwords in source ZIPs or committed files. No Android Gradle build or device test is asserted by this package generation. Use GitHub Actions build results and test import/export, persistence, plugin open/reload, settings, and chapter handoff on-device before calling the release verified.
+
+
+## v0.8.0 chapter intake
+`IntakeActivity` + `ChapterIntake.kt` receive selected text (PROCESS_TEXT), shared text/links (a lone link is fetched and converted to text), and .txt/.docx/.epub/.html files, store them in `filesDir/intake/pending.json`, and open the plugin `jabra-novel-assistant`. Plugins read it with `JabraAPI.intakeGet()`. Not yet verified by an Android build or on a device. Remaining: PDF, clipboard button inside the Hub, floating bubble.

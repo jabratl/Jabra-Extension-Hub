@@ -163,3 +163,10 @@ These must not be assumed to exist: background execution, scheduled jobs, arbitr
 The hub accepts an optional top-level `category` field in a plugin's `manifest.json`. This is display/filter metadata only; it does not grant permissions or change the native API. If absent or unrecognized, the hub displays `Other`. Recognized values currently include `Character`, `Item`, `Skill`, `Place`, `Organization`, `Title`, `Other`, `Utility`, `Writing`, `Translation`, and `Developer`.
 
 Favourites and manager filter/sort settings are stored by the hub in app-private preferences, separately from plugin ZIP files and plugin-owned persistent data. Removing a plugin does not automatically erase its saved plugin data; explicit erase remains a separate destructive action.
+
+
+## Chapter intake (capability `chapterIntake`, Hub 0.8.0+)
+- `JabraAPI.intakeGet()` returns a JSON string or null: `{title, text, source: selection|share|web|file, sourceName, mode: chapter|lookup, truncated, ts, parts?: [{title,text}]}`. When `parts` is present (EPUB), `text` is empty.
+- `JabraAPI.intakeClear()` deletes the pending intake. Call it after reading.
+- The Hub calls `window.__jabraIntake()` in an already-open plugin page when new text arrives. Plugins should also call `intakeGet()` at startup.
+- Entry points: text-selection menu, Share sheet, Open-with for .txt/.docx/.epub/.html. Not supported: PDF, silent reading of other apps.

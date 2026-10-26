@@ -15,6 +15,7 @@ object JabraApiContract {
         "textShare",
         "toast",
         "diagnostics",
+        "chapterIntake",
         "apiVersionInfo"
     )
 }
