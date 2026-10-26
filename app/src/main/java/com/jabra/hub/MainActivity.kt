@@ -26,6 +26,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var emptyTitle: TextView
     private lateinit var emptyMsg: TextView
     private var query = ""
+    private var showFavoritesOnly = false
+    private var categoryFilter = "All categories"
+    private var sortMode = "name_asc"
 
     private val picker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) importZip(uri)
@@ -42,6 +45,10 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         store = PluginStore(this)
+        val managerPrefs = getSharedPreferences("hub_manager", MODE_PRIVATE)
+        showFavoritesOnly = managerPrefs.getBoolean("favorites_only", false)
+        categoryFilter = managerPrefs.getString("category_filter", "All categories") ?: "All categories"
+        sortMode = managerPrefs.getString("sort_mode", "name_asc") ?: "name_asc"
         val sp = getSharedPreferences("hub", MODE_PRIVATE)
         if (!sp.getBoolean("seeded", false)) {
             try { store.installSample() } catch (_: Exception) {}
@@ -61,6 +68,7 @@ class MainActivity : AppCompatActivity() {
             picker.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
         }
         findViewById<TextView>(R.id.app_menu).setOnClickListener { anchor -> showAppMenu(anchor) }
+        findViewById<TextView>(R.id.filter_sort).setOnClickListener { anchor -> showFilterSortMenu(anchor) }
     }
 
     override fun onResume() {
@@ -73,17 +81,50 @@ class MainActivity : AppCompatActivity() {
         val menu = PopupMenu(this, anchor)
         menu.menu.add(0, 1, 0, "Storage & data")
         menu.menu.add(0, 2, 1, "About Jabra Hub")
+        menu.menu.add(0, 3, 2, "Diagnostics & support")
         menu.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 1 -> showStorage()
-                2 -> MaterialAlertDialogBuilder(this)
-                    .setTitle("Jabra Extension Hub")
-                    .setMessage("Version 0.3.5\n\nA modular Android plugin hub. Import ZIP plugins, search installed tools, view plugin details, and export plugins for backup or transfer.\n\nPlugin code runs in Android WebView. Features requiring native Android support may need a Hub update.")
-                    .setPositiveButton("OK", null).show()
+                2 -> {
+                    val version = try {
+                        packageManager.getPackageInfo(packageName, 0).versionName ?: "unknown"
+                    } catch (_: Exception) { "unknown" }
+                    MaterialAlertDialogBuilder(this)
+                        .setTitle("Jabra Extension Hub")
+                        .setMessage("Version $version\n\nA modular Android plugin hub. Import ZIP plugins, search installed tools, view plugin details, and export plugins for backup or transfer.\n\nPlugin code runs in Android WebView. Extensions should feature-detect the Jabra API and use documented fallbacks when a capability is unavailable.")
+                        .setPositiveButton("OK", null).show()
+                }
+                3 -> showDiagnostics()
             }
             true
         }
         menu.show()
+    }
+
+    private fun showDiagnostics() {
+        val report = AppDiagnostics.read(this)
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Diagnostics & support")
+            .setMessage("Recent local app events and errors. This report stays on this device unless you choose to share it.\n\n$report")
+            .setNeutralButton("Share report") { _, _ ->
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_SUBJECT, "Jabra Extension Hub diagnostics")
+                    putExtra(Intent.EXTRA_TEXT, "Jabra Extension Hub diagnostics\nVersion: ${packageManager.getPackageInfo(packageName, 0).versionName}\n\n$report")
+                }
+                try { startActivity(Intent.createChooser(send, "Share diagnostics")) }
+                catch (e: Exception) { AppDiagnostics.record(this, "Share diagnostics failed", e) }
+            }
+            .setNegativeButton("Close", null)
+            .setPositiveButton("Clear log") { _, _ ->
+                MaterialAlertDialogBuilder(this)
+                    .setTitle("Clear diagnostics?")
+                    .setMessage("This removes only the local diagnostics log. It does not affect plugins or saved data.")
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Clear") { _, _ -> AppDiagnostics.clear(this) }
+                    .show()
+            }
+            .show()
     }
 
     private fun showStorage() {
@@ -113,8 +154,10 @@ class MainActivity : AppCompatActivity() {
         Thread {
             try {
                 store.exportPlugin(id, uri)
+                AppDiagnostics.record(this, "Plugin export succeeded: $id")
                 runOnUiThread { Toast.makeText(this, "Plugin exported successfully", Toast.LENGTH_LONG).show() }
             } catch (e: Exception) {
+                AppDiagnostics.record(this, "Plugin export failed: $id", e)
                 runOnUiThread { Toast.makeText(this, "Export failed: ${e.message}", Toast.LENGTH_LONG).show() }
             }
         }.start()
@@ -125,11 +168,65 @@ class MainActivity : AppCompatActivity() {
         .trim('_')
         .ifEmpty { "plugin" }
 
+    private fun favoriteIds(): Set<String> =
+        getSharedPreferences("hub_favorites", MODE_PRIVATE).getStringSet("ids", emptySet<String>())?.toSet() ?: emptySet()
+
+    private fun setFavorite(id: String, favorite: Boolean) {
+        val prefs = getSharedPreferences("hub_favorites", MODE_PRIVATE)
+        val ids = favoriteIds().toMutableSet()
+        if (favorite) ids.add(id) else ids.remove(id)
+        prefs.edit().putStringSet("ids", ids).apply()
+        refresh()
+    }
+
+    private fun showFilterSortMenu(anchor: View) {
+        val menu = PopupMenu(this, anchor)
+        menu.menu.add(0, 1, 0, if (showFavoritesOnly) "Show all plugins" else "Show favourites only")
+        menu.menu.add(0, 2, 1, "Sort: Name A–Z")
+        menu.menu.add(0, 3, 2, "Sort: Name Z–A")
+        menu.menu.add(0, 4, 3, "Sort: Favourites first")
+        menu.menu.add(0, 5, 4, "Category: All categories")
+        store.list().map { it.category }.distinct().sorted().forEachIndexed { index, category ->
+            menu.menu.add(1, 100 + index, 5 + index, "Category: $category")
+        }
+        menu.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                1 -> showFavoritesOnly = !showFavoritesOnly
+                2 -> sortMode = "name_asc"
+                3 -> sortMode = "name_desc"
+                4 -> sortMode = "favorites"
+                5 -> categoryFilter = "All categories"
+                else -> if (item.groupId == 1) categoryFilter = item.title.toString().removePrefix("Category: ")
+            }
+            getSharedPreferences("hub_manager", MODE_PRIVATE).edit()
+                .putBoolean("favorites_only", showFavoritesOnly)
+                .putString("category_filter", categoryFilter)
+                .putString("sort_mode", sortMode)
+                .apply()
+            refresh()
+            true
+        }
+        menu.show()
+    }
+
     private fun refresh() {
         val all = store.list()
-        val plugins = if (query.isEmpty()) all else all.filter {
-            it.name.contains(query, ignoreCase = true) ||
-                it.description.contains(query, ignoreCase = true)
+        val favorites = favoriteIds()
+        var plugins = all.filter { p ->
+            (query.isEmpty() || p.name.contains(query, ignoreCase = true) || p.description.contains(query, ignoreCase = true) || p.id.contains(query, ignoreCase = true)) &&
+                (!showFavoritesOnly || favorites.contains(p.id)) &&
+                (categoryFilter == "All categories" || p.category.equals(categoryFilter, ignoreCase = true))
+        }
+        plugins = when (sortMode) {
+            "name_desc" -> plugins.sortedByDescending { it.name.lowercase(Locale.ROOT) }
+            "favorites" -> plugins.sortedWith(compareByDescending<Plugin> { favorites.contains(it.id) }.thenBy { it.name.lowercase(Locale.ROOT) })
+            else -> plugins.sortedBy { it.name.lowercase(Locale.ROOT) }
+        }
+        findViewById<TextView>(R.id.filter_sort).text = buildString {
+            append(if (showFavoritesOnly) "Favourites" else "All plugins")
+            if (categoryFilter != "All categories") append(" · ").append(categoryFilter)
+            append(" · ").append(when (sortMode) { "name_desc" -> "Z–A"; "favorites" -> "Favourites first"; else -> "A–Z" })
+            append("  ▾")
         }
         list.removeAllViews()
         empty.visibility = if (plugins.isEmpty()) View.VISIBLE else View.GONE
@@ -140,7 +237,7 @@ class MainActivity : AppCompatActivity() {
             emptyTitle.text = "No matches"
             emptyMsg.text = "Try a different search."
         }
-        count.text = if (query.isEmpty()) "${all.size} installed" else "${plugins.size} of ${all.size} shown"
+        count.text = if (plugins.size == all.size) "${all.size} installed" else "${plugins.size} of ${all.size} shown"
         for (p in plugins) {
             val v = layoutInflater.inflate(R.layout.item_plugin, list, false)
             v.findViewById<TextView>(R.id.icon).text = p.icon
@@ -148,7 +245,7 @@ class MainActivity : AppCompatActivity() {
             val d = v.findViewById<TextView>(R.id.desc)
             d.text = p.description
             d.visibility = if (p.description.isEmpty()) View.GONE else View.VISIBLE
-            v.findViewById<TextView>(R.id.meta).text = "v${p.version}"
+            v.findViewById<TextView>(R.id.meta).text = "v${p.version} · ${p.category}" + if (favorites.contains(p.id)) " · ★" else ""
             v.setOnClickListener { open(p) }
             v.findViewById<View>(R.id.more).setOnClickListener { anchor -> showMenu(anchor, p) }
             list.addView(v)
@@ -161,6 +258,10 @@ class MainActivity : AppCompatActivity() {
         menu.menu.add(0, 2, 1, "Details")
         menu.menu.add(0, 3, 2, "Export ZIP")
         menu.menu.add(0, 4, 3, "Remove")
+        menu.menu.add(0, 5, 4, if (favoriteIds().contains(p.id)) "Remove from favourites" else "Add to favourites")
+        if (store.hasRollback(p.id)) {
+            menu.menu.add(0, 6, 5, "Rollback to v${store.rollbackVersion(p.id) ?: "previous"}")
+        }
         menu.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 1 -> open(p)
@@ -169,11 +270,33 @@ class MainActivity : AppCompatActivity() {
                     exportPluginId = p.id
                     exportPicker.launch("${safeFileName(p.name)}_v${safeFileName(p.version)}.zip")
                 }
-                else -> confirmRemove(p)
+                4 -> confirmRemove(p)
+                5 -> setFavorite(p.id, !favoriteIds().contains(p.id))
+                6 -> confirmRollback(p)
             }
             true
         }
         menu.show()
+    }
+
+    private fun confirmRollback(p: Plugin) {
+        val previousVersion = store.rollbackVersion(p.id) ?: "previous"
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Rollback ${p.name}?")
+            .setMessage("Switch from version ${p.version} to version $previousVersion? The current version will be retained as the next rollback point. Plugin-owned saved data will not be erased.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Rollback") { _, _ ->
+                try {
+                    val rolledBack = store.rollbackPlugin(p.id)
+                    AppDiagnostics.record(this, "Plugin rollback succeeded: ${p.id} -> v${rolledBack.version}")
+                    refresh()
+                    Toast.makeText(this, "Rolled back to v${rolledBack.version}", Toast.LENGTH_LONG).show()
+                } catch (e: Exception) {
+                    AppDiagnostics.record(this, "Plugin rollback failed: ${p.id}", e)
+                    Toast.makeText(this, "Rollback failed: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+            .show()
     }
 
     private fun showDetails(p: Plugin) {
@@ -183,6 +306,7 @@ class MainActivity : AppCompatActivity() {
             if (p.description.isNotEmpty()) append(p.description).append("\n\n")
             append("ID: ").append(p.id).append('\n')
             append("Version: ").append(p.version).append('\n')
+            append("Category: ").append(p.category).append('\n')
             append("Entry: ").append(p.entry).append('\n')
             append("Plugin files: ").append(size).append('\n')
             append("Saved data: ").append(savedDataSize)
@@ -232,11 +356,13 @@ class MainActivity : AppCompatActivity() {
         Thread {
             try {
                 val p = store.importZip(uri)
+                AppDiagnostics.record(this, "Plugin import/install succeeded: ${p.id} v${p.version}")
                 runOnUiThread {
                     refresh()
                     Toast.makeText(this, "Installed ${p.name}", Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
+                AppDiagnostics.record(this, "Plugin import/install failed", e)
                 runOnUiThread {
                     Toast.makeText(this, "Import failed: ${e.message}", Toast.LENGTH_LONG).show()
                 }

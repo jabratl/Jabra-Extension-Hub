@@ -123,3 +123,9 @@ These must not be assumed to exist: background execution, scheduled jobs, arbitr
 - Test missing optional API and browser fallback.
 - Test denied permissions, offline mode, and interrupted operations.
 - Confirm failures are visible and never reported as success.
+
+## Hub release 0.4.0 manager metadata
+
+The hub accepts an optional top-level `category` field in a plugin's `manifest.json`. This is display/filter metadata only; it does not grant permissions or change the native API. If absent or unrecognized, the hub displays `Other`. Recognized values currently include `Character`, `Item`, `Skill`, `Place`, `Organization`, `Title`, `Other`, `Utility`, `Writing`, `Translation`, and `Developer`.
+
+Favourites and manager filter/sort settings are stored by the hub in app-private preferences, separately from plugin ZIP files and plugin-owned persistent data. Removing a plugin does not automatically erase its saved plugin data; explicit erase remains a separate destructive action.

@@ -199,6 +199,7 @@ class PluginActivity : AppCompatActivity() {
             @Suppress("OVERRIDE_DEPRECATION")
             override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail): Boolean {
                 Log.e(TAG, "WebView renderer exited; didCrash=${detail.didCrash()}")
+                AppDiagnostics.record(this@PluginActivity, "WebView renderer exited for plugin $id; didCrash=${detail.didCrash()}")
                 progress.visibility = View.GONE
                 errorView.visibility = View.VISIBLE
                 errorView.text = "This plugin's WebView stopped unexpectedly. Go back to the Hub and reopen it. If it repeats, update Android System WebView and share the crash log."

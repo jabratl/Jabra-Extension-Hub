@@ -11,8 +11,8 @@ android {
         applicationId = "com.jabra.hub"
         minSdk = 26
         targetSdk = 34
-        versionCode = 10
-        versionName = "0.3.8"
+        versionCode = 12
+        versionName = "0.4.0"
     }
     buildTypes {
         release { isMinifyEnabled = false }
