@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hello Plugin</title>
+<style>
+  :root { --bg:#141629; --card:#222648; --line:#30356B; --text:#F4F4FF; --sub:#A3A8D6; --accent:#FF8A5B; --teal:#5EEAD4; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:24px 20px 40px; background:var(--bg); color:var(--text);
+         font-family: system-ui, sans-serif; line-height:1.5; }
+  h1 { font-size:26px; margin:0 0 4px; }
+  p.sub { color:var(--sub); margin:0 0 24px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:20px; padding:18px; margin-bottom:14px; }
+  .card h2 { font-size:16px; margin:0 0 6px; }
+  .card p { margin:0 0 12px; color:var(--sub); font-size:14px; }
+  button { background:var(--accent); color:#1A1020; border:0; border-radius:14px; padding:12px 18px;
+           font-size:15px; font-weight:700; }
+  button:active { transform: scale(.97); }
+  .big { font-size:40px; font-weight:800; color:var(--teal); margin:0 0 10px; }
+  pre { background:#141629; border-radius:12px; padding:12px; color:var(--teal); font-size:12px;
+        white-space:pre-wrap; word-break:break-all; margin:0; }
+</style>
+</head>
+<body>
+  <h1>Hello Plugin 👋</h1>
+  <p class="sub">If you can read this, plugins are running inside the app.</p>
+
+  <div class="card">
+    <h2>Toast</h2>
+    <p>Shows a native Android message.</p>
+    <button onclick="hi()">Say hello</button>
+  </div>
+
+  <div class="card">
+    <h2>Saved counter</h2>
+    <p>Stays saved after you close the app.</p>
+    <div class="big" id="n">0</div>
+    <button onclick="inc()">Add one</button>
+  </div>
+
+  <div class="card">
+    <h2>App info</h2>
+    <pre id="info">…</pre>
+  </div>
+
+<script>
+  var api = window.JabraAPI;
+  function hi() { api ? api.toast("Hello from your plugin!") : alert("Open this inside the app"); }
+  function load() { return api ? parseInt(api.getItem("count") || "0", 10) : 0; }
+  function inc() { var c = load() + 1; if (api) api.setItem("count", String(c)); show(c); }
+  function show(c) { document.getElementById("n").textContent = c; }
+  show(load());
+  document.getElementById("info").textContent = api ? api.info() : "JabraAPI not found";
+</script>
+</body>
+</html>

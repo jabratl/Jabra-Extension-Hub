@@ -1,0 +1,8 @@
+{
+  "id": "hello-hub",
+  "name": "Hello Plugin",
+  "version": "1.0",
+  "description": "A starter plugin that tests the app bridge: toast, storage and info.",
+  "icon": "👋",
+  "entry": "index.html"
+}
