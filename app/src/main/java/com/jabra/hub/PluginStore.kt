@@ -5,6 +5,7 @@ import android.net.Uri
 import org.json.JSONObject
 import java.io.File
 import java.util.zip.ZipInputStream
+import java.util.zip.ZipOutputStream
 
 data class Plugin(
     val id: String,
@@ -41,6 +42,43 @@ class PluginStore(private val ctx: Context) {
 
     fun sizeOf(id: String): Long =
         File(root, id).walkTopDown().filter { it.isFile }.map { it.length() }.sum()
+
+    fun totalSize(): Long =
+        (root.listFiles() ?: emptyArray()).filter { it.isDirectory }
+            .sumOf { dir -> dir.walkTopDown().filter { it.isFile }.sumOf { it.length() } }
+
+    /** Export one installed plugin as a portable ZIP archive. */
+    fun exportPlugin(id: String, uri: Uri) {
+        val source = File(root, id)
+        require(source.isDirectory && File(source, "manifest.json").isFile) { "Plugin files are missing" }
+        val output = ctx.contentResolver.openOutputStream(uri)
+            ?: throw IllegalStateException("Cannot create the destination file")
+        output.use { raw ->
+            ZipOutputStream(raw.buffered()).use { zip ->
+                val basePath = source.canonicalPath + File.separator
+                source.walkTopDown().filter { it.isFile }.forEach { file ->
+                    val path = file.canonicalPath
+                    require(path.startsWith(basePath)) { "Unsafe plugin path" }
+                    val relative = file.relativeTo(source).invariantSeparatorsPath
+                    zip.putNextEntry(java.util.zip.ZipEntry("$id/$relative"))
+                    file.inputStream().buffered().use { input -> input.copyTo(zip) }
+                    zip.closeEntry()
+                }
+            }
+        }
+    }
+
+    fun cacheSize(): Long =
+        (ctx.cacheDir.listFiles() ?: emptyArray()).filter { it.isFile }
+            .sumOf { it.length() } + (ctx.cacheDir.listFiles() ?: emptyArray())
+            .filter { it.isDirectory }.sumOf { dir -> dir.walkTopDown().filter { it.isFile }.sumOf { it.length() } }
+
+    /** Clears temporary cache only; installed plugins and plugin preferences are untouched. */
+    fun clearTemporaryCache(): Boolean {
+        val ok = (ctx.cacheDir.listFiles() ?: emptyArray()).all { it.deleteRecursively() }
+        ctx.cacheDir.mkdirs()
+        return ok
+    }
 
     fun remove(id: String) {
         File(root, id).deleteRecursively()
@@ -111,16 +149,29 @@ class PluginStore(private val ctx: Context) {
             }
             val dest = File(root, id)
             val staging = File(ctx.filesDir, "staging_$id")
+            val previous = File(ctx.filesDir, "previous_$id")
             try {
                 staging.deleteRecursively()
+                previous.deleteRecursively()
                 base.copyRecursively(staging, overwrite = true)
-                // copy sofol hole tarpor-i purono version soriye notun-ta boshao
-                dest.deleteRecursively()
-                if (!staging.renameTo(dest)) {
-                    staging.copyRecursively(dest, overwrite = true)
+                // Keep the previous installation until the replacement is safely staged.
+                if (dest.exists() && !dest.renameTo(previous)) {
+                    throw IllegalStateException("Could not prepare the existing plugin for update")
                 }
+                val installed = staging.renameTo(dest) || try {
+                    staging.copyRecursively(dest, overwrite = true)
+                    true
+                } catch (_: Exception) { false }
+                if (!installed) {
+                    dest.deleteRecursively()
+                    if (previous.exists()) previous.renameTo(dest)
+                    throw IllegalStateException("Could not install plugin; previous version was restored when possible")
+                }
+                previous.deleteRecursively()
             } finally {
                 staging.deleteRecursively()
+                if (!dest.exists() && previous.exists()) previous.renameTo(dest)
+                previous.deleteRecursively()
             }
             return read(dest) ?: throw IllegalStateException("Invalid manifest.json")
         } finally {

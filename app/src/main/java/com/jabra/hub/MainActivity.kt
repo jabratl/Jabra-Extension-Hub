@@ -10,6 +10,7 @@ import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
+import java.util.Locale
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.widget.addTextChangedListener
@@ -28,6 +29,12 @@ class MainActivity : AppCompatActivity() {
 
     private val picker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) importZip(uri)
+    }
+    private var exportPluginId: String? = null
+    private val exportPicker = registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        val id = exportPluginId
+        exportPluginId = null
+        if (uri != null && id != null) exportPlugin(id, uri)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -51,14 +58,71 @@ class MainActivity : AppCompatActivity() {
             refresh()
         }
         findViewById<ExtendedFloatingActionButton>(R.id.fab).setOnClickListener {
-            picker.launch(arrayOf("*/*"))
+            picker.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
         }
+        findViewById<TextView>(R.id.app_menu).setOnClickListener { anchor -> showAppMenu(anchor) }
     }
 
     override fun onResume() {
         super.onResume()
         refresh()
     }
+
+
+    private fun showAppMenu(anchor: View) {
+        val menu = PopupMenu(this, anchor)
+        menu.menu.add(0, 1, 0, "Storage & data")
+        menu.menu.add(0, 2, 1, "About Jabra Hub")
+        menu.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                1 -> showStorage()
+                2 -> MaterialAlertDialogBuilder(this)
+                    .setTitle("Jabra Extension Hub")
+                    .setMessage("Version 0.3.3\n\nA modular Android plugin hub. Import ZIP plugins, search installed tools, view plugin details, and export plugins for backup or transfer.\n\nPlugin code runs in Android WebView. Features requiring native Android support may need a Hub update.")
+                    .setPositiveButton("OK", null).show()
+            }
+            true
+        }
+        menu.show()
+    }
+
+    private fun showStorage() {
+        val pluginBytes = store.totalSize()
+        val cacheBytes = store.cacheSize()
+        val text = "Installed plugins: ${store.list().size}\nPlugin storage: ${Formatter.formatShortFileSize(this, pluginBytes)}\nTemporary cache: ${Formatter.formatShortFileSize(this, cacheBytes)}\n\nClearing temporary cache does not remove installed plugins or their saved preferences."
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Storage & data")
+            .setMessage(text)
+            .setNeutralButton("Refresh") { _, _ -> showStorage() }
+            .setNegativeButton("Close", null)
+            .setPositiveButton("Clear cache") { _, _ ->
+                MaterialAlertDialogBuilder(this)
+                    .setTitle("Clear temporary cache?")
+                    .setMessage("Only temporary cache files will be removed. Installed plugins and plugin data will be kept.")
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Clear") { _, _ ->
+                        val ok = store.clearTemporaryCache()
+                        Toast.makeText(this, if (ok) "Temporary cache cleared" else "Some temporary files could not be removed", Toast.LENGTH_LONG).show()
+                        showStorage()
+                    }.show()
+            }.show()
+    }
+
+    private fun exportPlugin(id: String, uri: Uri) {
+        Thread {
+            try {
+                store.exportPlugin(id, uri)
+                runOnUiThread { Toast.makeText(this, "Plugin exported successfully", Toast.LENGTH_LONG).show() }
+            } catch (e: Exception) {
+                runOnUiThread { Toast.makeText(this, "Export failed: ${e.message}", Toast.LENGTH_LONG).show() }
+            }
+        }.start()
+    }
+
+    private fun safeFileName(value: String): String = value
+        .replace(Regex("[^A-Za-z0-9._-]"), "_")
+        .trim('_')
+        .ifEmpty { "plugin" }
 
     private fun refresh() {
         val all = store.list()
@@ -94,11 +158,16 @@ class MainActivity : AppCompatActivity() {
         val menu = PopupMenu(this, anchor)
         menu.menu.add(0, 1, 0, "Open")
         menu.menu.add(0, 2, 1, "Details")
-        menu.menu.add(0, 3, 2, "Remove")
+        menu.menu.add(0, 3, 2, "Export ZIP")
+        menu.menu.add(0, 4, 3, "Remove")
         menu.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 1 -> open(p)
                 2 -> showDetails(p)
+                3 -> {
+                    exportPluginId = p.id
+                    exportPicker.launch("${safeFileName(p.name)}_v${safeFileName(p.version)}.zip")
+                }
                 else -> confirmRemove(p)
             }
             true

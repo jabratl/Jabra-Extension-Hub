@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -12,11 +13,17 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import android.webkit.WebChromeClient
+import android.webkit.JsResult
+import android.webkit.JsPromptResult
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient.FileChooserParams
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.view.View
 import android.widget.TextView
+import android.widget.EditText
 import android.widget.Toast
 import androidx.activity.addCallback
 import androidx.appcompat.app.AppCompatActivity
@@ -29,6 +36,12 @@ class PluginActivity : AppCompatActivity() {
     private lateinit var web: WebView
     private lateinit var progress: View
     private lateinit var errorView: TextView
+    private var filePathCallback: ValueCallback<Array<Uri>>? = null
+
+    private val filePicker = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        filePathCallback?.onReceiveValue(if (uri != null) arrayOf(uri) else null)
+        filePathCallback = null
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -66,6 +79,63 @@ class PluginActivity : AppCompatActivity() {
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
         }
         web.addJavascriptInterface(Bridge(this, id), "JabraAPI")
+        web.webChromeClient = object : WebChromeClient() {
+            override fun onShowFileChooser(
+                webView: WebView?,
+                filePathCallback: ValueCallback<Array<Uri>>?,
+                fileChooserParams: FileChooserParams?
+            ): Boolean {
+                this@PluginActivity.filePathCallback?.onReceiveValue(null)
+                this@PluginActivity.filePathCallback = filePathCallback
+                // OpenDocument accepts MIME types, not filename extensions such as ".json".
+                // Normalize WebView acceptTypes and fall back safely when a site only provides extensions.
+                val rawAccepts = fileChooserParams?.acceptTypes.orEmpty()
+                    .flatMap { it.split(",") }
+                    .map { it.trim().lowercase() }
+                    .filter { it.contains("/") && !it.startsWith(".") }
+                    .distinct()
+                val accepts = rawAccepts.ifEmpty { listOf("*/*") }.toTypedArray()
+                return try {
+                    filePicker.launch(accepts)
+                    true
+                } catch (_: Exception) {
+                    this@PluginActivity.filePathCallback?.onReceiveValue(null)
+                    this@PluginActivity.filePathCallback = null
+                    false
+                }
+            }
+
+            override fun onJsAlert(view: WebView?, url: String?, message: String?, result: JsResult?): Boolean {
+                MaterialAlertDialogBuilder(this@PluginActivity)
+                    .setMessage(message.orEmpty())
+                    .setPositiveButton("OK") { _, _ -> result?.confirm() }
+                    .setOnCancelListener { result?.cancel() }
+                    .show()
+                return true
+            }
+
+            override fun onJsConfirm(view: WebView?, url: String?, message: String?, result: JsResult?): Boolean {
+                MaterialAlertDialogBuilder(this@PluginActivity)
+                    .setMessage(message.orEmpty())
+                    .setPositiveButton("OK") { _, _ -> result?.confirm() }
+                    .setNegativeButton("Cancel") { _, _ -> result?.cancel() }
+                    .setOnCancelListener { result?.cancel() }
+                    .show()
+                return true
+            }
+
+            override fun onJsPrompt(view: WebView?, url: String?, message: String?, defaultValue: String?, result: JsPromptResult?): Boolean {
+                val input = EditText(this@PluginActivity).apply { setText(defaultValue.orEmpty()) }
+                MaterialAlertDialogBuilder(this@PluginActivity)
+                    .setMessage(message.orEmpty())
+                    .setView(input)
+                    .setPositiveButton("OK") { _, _ -> result?.confirm(input.text.toString()) }
+                    .setNegativeButton("Cancel") { _, _ -> result?.cancel() }
+                    .setOnCancelListener { result?.cancel() }
+                    .show()
+                return true
+            }
+        }
         web.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(
                 view: WebView,
@@ -119,6 +189,8 @@ class PluginActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        filePathCallback?.onReceiveValue(null)
+        filePathCallback = null
         if (::web.isInitialized) web.destroy()
         super.onDestroy()
     }

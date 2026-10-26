@@ -20,13 +20,32 @@
             android:paddingTop="36dp"
             android:paddingEnd="22dp">
 
-            <TextView
-                android:layout_width="wrap_content"
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Jabra Extension Hub"
-                android:textColor="@color/text"
-                android:textSize="30sp"
-                android:textStyle="bold" />
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Jabra Extension Hub"
+                    android:textColor="@color/text"
+                    android:textSize="27sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/app_menu"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="App options"
+                    android:gravity="center"
+                    android:text="⋮"
+                    android:textColor="@color/text"
+                    android:textSize="28sp" />
+            </LinearLayout>
 
             <TextView
                 android:layout_width="wrap_content"
