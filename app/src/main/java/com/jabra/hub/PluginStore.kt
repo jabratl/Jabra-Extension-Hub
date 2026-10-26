@@ -47,6 +47,15 @@ class PluginStore(private val ctx: Context) {
         (root.listFiles() ?: emptyArray()).filter { it.isDirectory }
             .sumOf { dir -> dir.walkTopDown().filter { it.isFile }.sumOf { it.length() } }
 
+    fun savedDataRoot(): File = File(ctx.filesDir, "plugin_data").apply { mkdirs() }
+
+    fun savedDataSize(id: String): Long =
+        File(savedDataRoot(), id).walkTopDown().filter { it.isFile }.sumOf { it.length() }
+
+    fun totalSavedDataSize(): Long =
+        (savedDataRoot().listFiles() ?: emptyArray()).filter { it.isDirectory }
+            .sumOf { dir -> dir.walkTopDown().filter { it.isFile }.sumOf { it.length() } }
+
     /** Export one installed plugin as a portable ZIP archive. */
     fun exportPlugin(id: String, uri: Uri) {
         val source = File(root, id)
@@ -80,9 +89,14 @@ class PluginStore(private val ctx: Context) {
         return ok
     }
 
+    /** Removes plugin code but deliberately preserves its saved data for a later reinstall. */
     fun remove(id: String) {
         File(root, id).deleteRecursively()
-        // plugin-er saved data-o muche felo (age uninstall-er por data theke jeto)
+    }
+
+    /** Destructive opt-in: erase the plugin's private persistent data and preferences too. */
+    fun erasePluginData(id: String) {
+        File(File(ctx.filesDir, "plugin_data"), id).deleteRecursively()
         ctx.deleteSharedPreferences("plugin_$id")
     }
 

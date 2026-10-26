@@ -28,6 +28,11 @@ import android.widget.Toast
 import androidx.activity.addCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.webkit.WebViewAssetLoader
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
+import android.util.Base64
+import java.io.File
+import java.io.FileOutputStream
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.appbar.MaterialToolbar
 import org.json.JSONObject
@@ -80,6 +85,15 @@ class PluginActivity : AppCompatActivity() {
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
         }
         web.addJavascriptInterface(Bridge(this, id), "JabraAPI")
+        // Persist standard localStorage calls in app-private files, scoped to this plugin.
+        // The script runs before plugin JavaScript, so ordinary web plugins need no changes.
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            WebViewCompat.addDocumentStartJavaScript(
+                web,
+                persistentLocalStorageScript(),
+                setOf("https://$HOST/*")
+            )
+        }
         web.webChromeClient = object : WebChromeClient() {
             override fun onShowFileChooser(
                 webView: WebView?,
@@ -196,23 +210,82 @@ class PluginActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    /** Functions a plugin can call as JabraAPI.xxx(...) */
-    class Bridge(private val ctx: Context, pluginId: String) {
+    /** Native, app-private persistence APIs available to every plugin as JabraAPI.xxx(...). */
+    class Bridge(private val ctx: Context, private val pluginId: String) {
         private val sp = ctx.getSharedPreferences("plugin_$pluginId", Context.MODE_PRIVATE)
         private val main = Handler(Looper.getMainLooper())
+        private val dataRoot: File by lazy {
+            File(File(ctx.filesDir, "plugin_data"), pluginId).apply { mkdirs() }
+        }
+
+        private fun encodedKey(key: String): String =
+            "d_" + android.util.Base64.encodeToString(key.toByteArray(Charsets.UTF_8), android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING)
+
+        private fun dataFile(key: String): File {
+            require(key.length <= 512) { "Storage key is too long" }
+            return File(dataRoot, encodedKey(key))
+        }
+
+        @JavascriptInterface
+        fun storageGet(key: String): String? = try {
+            val f = dataFile(key)
+            if (f.isFile) f.readText(Charsets.UTF_8) else null
+        } catch (_: Exception) { null }
+
+        @JavascriptInterface
+        fun storageSet(key: String, value: String): Boolean = try {
+            require(value.length <= 40_000_000) { "Storage value is too large" }
+            dataRoot.mkdirs()
+            val dest = dataFile(key)
+            val tmp = File(dataRoot, dest.name + ".tmp")
+            FileOutputStream(tmp).use { out ->
+                out.write(value.toByteArray(Charsets.UTF_8))
+                out.fd.sync()
+            }
+            val backup = File(dataRoot, dest.name + ".bak")
+            backup.delete()
+            if (dest.exists() && !dest.renameTo(backup)) throw IllegalStateException("Cannot prepare existing saved data")
+            val installed = tmp.renameTo(dest) || try { tmp.copyTo(dest, overwrite = true); tmp.delete(); true } catch (_: Exception) { false }
+            if (!installed) {
+                dest.delete()
+                if (backup.exists()) backup.renameTo(dest)
+                throw IllegalStateException("Could not commit saved data")
+            }
+            backup.delete()
+            true
+        } catch (_: Exception) { false }
+
+        @JavascriptInterface
+        fun storageRemove(key: String): Boolean = try { !dataFile(key).exists() || dataFile(key).delete() } catch (_: Exception) { false }
+
+        @JavascriptInterface
+        fun storageKeys(prefix: String): String = try {
+            val keys = (dataRoot.listFiles() ?: emptyArray()).asSequence()
+                .filter { it.isFile && it.name.startsWith("d_") && !it.name.endsWith(".tmp") }
+                .mapNotNull { f -> try { String(android.util.Base64.decode(f.name.removePrefix("d_"), android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING), Charsets.UTF_8) } catch (_: Exception) { null } }
+                .filter { it.startsWith(prefix) }.sorted().toList()
+            org.json.JSONArray(keys).toString()
+        } catch (_: Exception) { "[]" }
+
+        @JavascriptInterface
+        fun storageRemovePrefix(prefix: String): Boolean = try {
+            val keys = org.json.JSONArray(storageKeys(prefix))
+            var ok = true
+            for (i in 0 until keys.length()) {
+                val k = keys.optString(i)
+                if (!storageRemove(k)) ok = false
+            }
+            ok
+        } catch (_: Exception) { false }
 
         @JavascriptInterface
         fun getItem(key: String): String? = sp.getString(key, null)
 
         @JavascriptInterface
-        fun setItem(key: String, value: String) {
-            sp.edit().putString(key, value).apply()
-        }
+        fun setItem(key: String, value: String) { sp.edit().putString(key, value).commit() }
 
         @JavascriptInterface
-        fun removeItem(key: String) {
-            sp.edit().remove(key).apply()
-        }
+        fun removeItem(key: String) { sp.edit().remove(key).commit() }
 
         @JavascriptInterface
         fun toast(message: String) {
@@ -223,8 +296,58 @@ class PluginActivity : AppCompatActivity() {
         fun info(): String = JSONObject()
             .put("app", "Jabra Extension Hub")
             .put("android", Build.VERSION.SDK_INT)
+            .put("pluginId", pluginId)
+            .put("durableStorage", true)
             .toString()
     }
+
+    private fun persistentLocalStorageScript(): String = """
+        (function(){
+          try {
+            if (!window.JabraAPI || !JabraAPI.storageGet || window.__jabraPersistentStorageInstalled) return;
+            window.__jabraPersistentStorageInstalled = true;
+            var proto = Storage.prototype;
+            var original = {
+              get: proto.getItem, set: proto.setItem, remove: proto.removeItem,
+              key: proto.key, clear: proto.clear,
+              length: Object.getOwnPropertyDescriptor(proto, 'length')
+            };
+            function isLocal(s){ return s === window.localStorage; }
+            function keys(){
+              var out=[];
+              try { out=JSON.parse(JabraAPI.storageKeys('ls:')||'[]').map(function(k){return k.slice(3)}); } catch(e) {}
+              try { for(var i=0;i<(original.length?original.length.get.call(localStorage):0);i++){var k=original.key.call(localStorage,i);if(k!==null&&out.indexOf(k)<0)out.push(k);} } catch(e){}
+              return out;
+            }
+            proto.getItem=function(k){
+              if(!isLocal(this)) return original.get.call(this,k);
+              k=String(k); var v=JabraAPI.storageGet('ls:'+k);
+              if(v!==null && v!==undefined) return v;
+              try { v=original.get.call(localStorage,k); if(v!==null) JabraAPI.storageSet('ls:'+k,v); } catch(e){}
+              return v===undefined?null:v;
+            };
+            proto.setItem=function(k,v){
+              if(!isLocal(this)) return original.set.call(this,k,v);
+              if(!JabraAPI.storageSet('ls:'+String(k),String(v))) throw new Error('Jabra Hub could not save local data. Export a backup and free storage space.');
+            };
+            proto.removeItem=function(k){
+              if(!isLocal(this)) return original.remove.call(this,k);
+              JabraAPI.storageRemove('ls:'+String(k));
+            };
+            proto.clear=function(){
+              if(!isLocal(this)) return original.clear.call(this);
+              JabraAPI.storageRemovePrefix('ls:');
+            };
+            proto.key=function(i){
+              if(!isLocal(this)) return original.key.call(this,i);
+              var a=keys(); return Number(i)>=0&&Number(i)<a.length?a[Number(i)]:null;
+            };
+            if(original.length && original.length.configurable){
+              Object.defineProperty(proto,'length',{configurable:true,enumerable:true,get:function(){return isLocal(this)?keys().length:original.length.get.call(this)}});
+            }
+          } catch(e) { /* Keep the browser's native storage if the shim is unavailable. */ }
+        })();
+    """.trimIndent()
 
     companion object {
         private const val HOST = "appassets.androidplatform.net"

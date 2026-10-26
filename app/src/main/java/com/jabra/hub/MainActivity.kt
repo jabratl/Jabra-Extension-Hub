@@ -78,7 +78,7 @@ class MainActivity : AppCompatActivity() {
                 1 -> showStorage()
                 2 -> MaterialAlertDialogBuilder(this)
                     .setTitle("Jabra Extension Hub")
-                    .setMessage("Version 0.3.4\n\nA modular Android plugin hub. Import ZIP plugins, search installed tools, view plugin details, and export plugins for backup or transfer.\n\nPlugin code runs in Android WebView. Features requiring native Android support may need a Hub update.")
+                    .setMessage("Version 0.3.5\n\nA modular Android plugin hub. Import ZIP plugins, search installed tools, view plugin details, and export plugins for backup or transfer.\n\nPlugin code runs in Android WebView. Features requiring native Android support may need a Hub update.")
                     .setPositiveButton("OK", null).show()
             }
             true
@@ -88,8 +88,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun showStorage() {
         val pluginBytes = store.totalSize()
+        val dataBytes = store.totalSavedDataSize()
         val cacheBytes = store.cacheSize()
-        val text = "Installed plugins: ${store.list().size}\nPlugin storage: ${Formatter.formatShortFileSize(this, pluginBytes)}\nTemporary cache: ${Formatter.formatShortFileSize(this, cacheBytes)}\n\nClearing temporary cache does not remove installed plugins or their saved preferences."
+        val text = "Installed plugins: ${store.list().size}\nPlugin files: ${Formatter.formatShortFileSize(this, pluginBytes)}\nSaved plugin data: ${Formatter.formatShortFileSize(this, dataBytes)}\nTemporary cache: ${Formatter.formatShortFileSize(this, cacheBytes)}\n\nSaved plugin data is kept separately from plugin ZIP files. Clearing temporary cache does not remove installed plugins or their saved data."
         MaterialAlertDialogBuilder(this)
             .setTitle("Storage & data")
             .setMessage(text)
@@ -177,12 +178,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun showDetails(p: Plugin) {
         val size = Formatter.formatShortFileSize(this, store.sizeOf(p.id))
+        val savedDataSize = Formatter.formatShortFileSize(this, store.savedDataSize(p.id))
         val text = buildString {
             if (p.description.isNotEmpty()) append(p.description).append("\n\n")
             append("ID: ").append(p.id).append('\n')
             append("Version: ").append(p.version).append('\n')
             append("Entry: ").append(p.entry).append('\n')
-            append("Size: ").append(size)
+            append("Plugin files: ").append(size).append('\n')
+            append("Saved data: ").append(savedDataSize)
         }
         MaterialAlertDialogBuilder(this)
             .setTitle(p.name)
@@ -204,12 +207,23 @@ class MainActivity : AppCompatActivity() {
     private fun confirmRemove(p: Plugin) {
         MaterialAlertDialogBuilder(this)
             .setTitle("Remove ${p.name}?")
-            .setMessage("The plugin and its files will be deleted from this app.")
-            .setPositiveButton("Remove") { _, _ ->
+            .setMessage("Remove the plugin files? Saved data will be kept so it can be restored if you reinstall the same plugin. Choose ‘Erase all data’ only if you want to permanently delete its saved work too.")
+            .setPositiveButton("Remove plugin") { _, _ ->
                 store.remove(p.id)
                 refresh()
             }
-            .setNegativeButton("Cancel", null)
+            .setNeutralButton("Erase all data") { _, _ ->
+                MaterialAlertDialogBuilder(this)
+                    .setTitle("Permanently erase ${p.name} data?")
+                    .setMessage("This deletes the plugin's saved local data and preferences. Export a backup first if you may need them.")
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Erase data") { _, _ ->
+                        store.remove(p.id)
+                        store.erasePluginData(p.id)
+                        refresh()
+                    }.show()
+            }
+            .setNegativeButton("Keep plugin", null)
             .show()
     }
 
