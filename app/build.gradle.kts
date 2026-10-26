@@ -3,6 +3,14 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val signingStorePath = System.getenv("JABRA_SIGNING_STORE_FILE")
+val signingStorePassword = System.getenv("JABRA_SIGNING_STORE_PASSWORD")
+val signingKeyAlias = System.getenv("JABRA_SIGNING_KEY_ALIAS")
+val signingKeyPassword = System.getenv("JABRA_SIGNING_KEY_PASSWORD")
+val hasStableSigning = !signingStorePath.isNullOrBlank() &&
+    !signingStorePassword.isNullOrBlank() && !signingKeyAlias.isNullOrBlank() &&
+    !signingKeyPassword.isNullOrBlank() && file(signingStorePath).isFile
+
 android {
     namespace = "com.jabra.hub"
     compileSdk = 34
@@ -11,11 +19,25 @@ android {
         applicationId = "com.jabra.hub"
         minSdk = 26
         targetSdk = 34
-        versionCode = 13
-        versionName = "0.5.0"
+        versionCode = 14
+        versionName = "0.6.0"
+    }
+    signingConfigs {
+        if (hasStableSigning) {
+            create("stableRelease") {
+                storeFile = file(signingStorePath!!)
+                storePassword = signingStorePassword
+                keyAlias = signingKeyAlias
+                keyPassword = signingKeyPassword
+                storeType = "PKCS12"
+            }
+        }
     }
     buildTypes {
-        release { isMinifyEnabled = false }
+        release {
+            isMinifyEnabled = false
+            if (hasStableSigning) signingConfig = signingConfigs.getByName("stableRelease")
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

@@ -73,7 +73,10 @@ for token, source, label in [
     ('minJabraApiVersion', store, 'minimum API compatibility validation'),
     ('requiredCapabilities', store, 'required capability validation'),
     ('showApiContract', main, 'developer API contract screen'),
-    ('Jabra-Extension-Hub-v${{ env.VERSION_NAME }}-debug.apk', (ROOT / '.github/workflows/android.yml').read_text(encoding='utf-8'), 'versioned APK artifact'),
+    ('APK_FILENAME=Jabra-Extension-Hub-v${VERSION_NAME}-debug.apk', (ROOT / '.github/workflows/android-build.yml').read_text(encoding='utf-8'), 'versioned debug APK artifact'),
+    ('JABRA_SIGNING_KEYSTORE_BASE64', (ROOT / '.github/workflows/android-build.yml').read_text(encoding='utf-8'), 'stable signing secret support'),
+    ('Generate Jabra release signing key (one-time)', (ROOT / '.github/workflows/generate-signing-key.yml').read_text(encoding='utf-8'), 'one-time signing key workflow'),
+    ('STABLE_SIGNING_SETUP.md', '\n'.join(str(p.relative_to(ROOT)) for p in ROOT.rglob('STABLE_SIGNING_SETUP.md')), 'stable signing migration instructions'),
 ]:
     check(token in source, f'Missing expected release feature: {label}')
 
