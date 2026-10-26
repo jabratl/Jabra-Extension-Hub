@@ -69,6 +69,15 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<TextView>(R.id.app_menu).setOnClickListener { anchor -> showAppMenu(anchor) }
         findViewById<TextView>(R.id.filter_sort).setOnClickListener { anchor -> showFilterSortMenu(anchor) }
+        findViewById<View>(R.id.nav_dashboard).setOnClickListener {
+            query = ""; findViewById<EditText>(R.id.search).setText(""); showFavoritesOnly = false; categoryFilter = "All categories"; refresh()
+        }
+        findViewById<View>(R.id.nav_installed).setOnClickListener {
+            findViewById<EditText>(R.id.search).requestFocus(); refresh()
+        }
+        findViewById<View>(R.id.nav_import).setOnClickListener { picker.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }
+        findViewById<View>(R.id.nav_activity).setOnClickListener { showDiagnostics() }
+        findViewById<View>(R.id.nav_settings).setOnClickListener { showSettings() }
     }
 
     override fun onResume() {
@@ -103,6 +112,28 @@ class MainActivity : AppCompatActivity() {
         menu.show()
     }
 
+
+    private fun showSettings() {
+        val themes = arrayOf("System default", "Dark", "Light")
+        val prefs = getSharedPreferences("hub_settings", MODE_PRIVATE)
+        val current = prefs.getInt("theme_choice", 0).coerceIn(0, 2)
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Settings")
+            .setSingleChoiceItems(themes, current) { dialog, which ->
+                prefs.edit().putInt("theme_choice", which).apply()
+                val msg = when (which) {
+                    1 -> "Dark theme preference saved. Full palette support depends on the installed theme resources."
+                    2 -> "Light theme preference saved. Full palette support depends on the installed theme resources."
+                    else -> "System theme preference saved."
+                }
+                Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                dialog.dismiss()
+            }
+            .setNeutralButton("Storage & data") { _, _ -> showStorage() }
+            .setNegativeButton("Close", null)
+            .setPositiveButton("Diagnostics") { _, _ -> showDiagnostics() }
+            .show()
+    }
 
     private fun showApiContract() {
         val capabilities = JabraApiContract.capabilities.joinToString("\n• ", prefix = "• ")
