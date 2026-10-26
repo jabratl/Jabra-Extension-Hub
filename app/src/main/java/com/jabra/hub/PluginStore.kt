@@ -39,8 +39,13 @@ class PluginStore(private val ctx: Context) {
         null
     }
 
+    fun sizeOf(id: String): Long =
+        File(root, id).walkTopDown().filter { it.isFile }.map { it.length() }.sum()
+
     fun remove(id: String) {
         File(root, id).deleteRecursively()
+        // plugin-er saved data-o muche felo (age uninstall-er por data theke jeto)
+        ctx.deleteSharedPreferences("plugin_$id")
     }
 
     fun installSample() {
@@ -56,12 +61,14 @@ class PluginStore(private val ctx: Context) {
         val tmp = File(ctx.cacheDir, "import_" + System.currentTimeMillis()).apply { mkdirs() }
         try {
             var total = 0L
+            var entries = 0
             val input = ctx.contentResolver.openInputStream(uri)
                 ?: throw IllegalStateException("Cannot open the file")
             input.use { raw ->
                 ZipInputStream(raw.buffered()).use { zin ->
                     var e = zin.nextEntry
                     while (e != null) {
+                        if (++entries > MAX_ENTRIES) throw IllegalStateException("Too many files in the zip")
                         val out = File(tmp, e.name)
                         if (!out.canonicalPath.startsWith(tmp.canonicalPath + File.separator)) {
                             throw IllegalStateException("Unsafe zip file")
@@ -70,8 +77,16 @@ class PluginStore(private val ctx: Context) {
                             out.mkdirs()
                         } else {
                             out.parentFile?.mkdirs()
-                            out.outputStream().use { o -> total += zin.copyTo(o) }
-                            if (total > MAX_BYTES) throw IllegalStateException("Plugin is too large")
+                            out.outputStream().use { o ->
+                                val buf = ByteArray(16 * 1024)
+                                while (true) {
+                                    val n = zin.read(buf)
+                                    if (n < 0) break
+                                    total += n
+                                    if (total > MAX_BYTES) throw IllegalStateException("Plugin is too large")
+                                    o.write(buf, 0, n)
+                                }
+                            }
                         }
                         zin.closeEntry()
                         e = zin.nextEntry
@@ -87,12 +102,26 @@ class PluginStore(private val ctx: Context) {
                 .trim('-')
                 .ifEmpty { "plugin" }
             val entry = j.optString("entry", "index.html")
-            if (!File(base, entry).exists()) {
+            val entryFile = File(base, entry)
+            if (!entryFile.isFile) {
                 throw IllegalStateException("Entry file '$entry' is missing")
             }
+            if (!entryFile.canonicalPath.startsWith(base.canonicalPath + File.separator)) {
+                throw IllegalStateException("Unsafe entry path")
+            }
             val dest = File(root, id)
-            dest.deleteRecursively()
-            base.copyRecursively(dest, overwrite = true)
+            val staging = File(ctx.filesDir, "staging_$id")
+            try {
+                staging.deleteRecursively()
+                base.copyRecursively(staging, overwrite = true)
+                // copy sofol hole tarpor-i purono version soriye notun-ta boshao
+                dest.deleteRecursively()
+                if (!staging.renameTo(dest)) {
+                    staging.copyRecursively(dest, overwrite = true)
+                }
+            } finally {
+                staging.deleteRecursively()
+            }
             return read(dest) ?: throw IllegalStateException("Invalid manifest.json")
         } finally {
             tmp.deleteRecursively()
@@ -106,5 +135,6 @@ class PluginStore(private val ctx: Context) {
 
     companion object {
         private const val MAX_BYTES = 200L * 1024 * 1024
+        private const val MAX_ENTRIES = 5000
     }
 }

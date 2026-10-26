@@ -9,10 +9,14 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.webkit.JavascriptInterface
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.view.View
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.addCallback
 import androidx.appcompat.app.AppCompatActivity
@@ -23,6 +27,8 @@ import org.json.JSONObject
 class PluginActivity : AppCompatActivity() {
 
     private lateinit var web: WebView
+    private lateinit var progress: View
+    private lateinit var errorView: TextView
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -49,12 +55,15 @@ class PluginActivity : AppCompatActivity() {
             .build()
 
         web = findViewById(R.id.web)
+        progress = findViewById(R.id.progress)
+        errorView = findViewById(R.id.error)
         web.setBackgroundColor(Color.parseColor("#141629"))
         web.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
             allowFileAccess = false
             allowContentAccess = false
+            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
         }
         web.addJavascriptInterface(Bridge(this, id), "JabraAPI")
         web.webViewClient = object : WebViewClient() {
@@ -62,6 +71,30 @@ class PluginActivity : AppCompatActivity() {
                 view: WebView,
                 request: WebResourceRequest
             ): WebResourceResponse? = loader.shouldInterceptRequest(request.url)
+
+            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                progress.visibility = View.VISIBLE
+            }
+
+            override fun onPageFinished(view: WebView?, url: String?) {
+                progress.visibility = View.GONE
+            }
+
+            override fun onReceivedError(
+                view: WebView,
+                request: WebResourceRequest,
+                error: WebResourceError
+            ) {
+                if (request.isForMainFrame) showError()
+            }
+
+            override fun onReceivedHttpError(
+                view: WebView,
+                request: WebResourceRequest,
+                errorResponse: WebResourceResponse
+            ) {
+                if (request.isForMainFrame && errorResponse.statusCode >= 400) showError()
+            }
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 if (request.url.host == HOST) return false
@@ -78,6 +111,11 @@ class PluginActivity : AppCompatActivity() {
         }
 
         web.loadUrl("https://$HOST/plugins/$id/$entry")
+    }
+
+    private fun showError() {
+        progress.visibility = View.GONE
+        errorView.visibility = View.VISIBLE
     }
 
     override fun onDestroy() {
