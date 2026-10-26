@@ -81,5 +81,14 @@
                 <data android:mimeType="application/epub+zip" />
             </intent-filter>
         </activity>
+
+        <!-- Invisible helper behind a bubble button (reads clipboard, opens the plugin). -->
+        <activity
+            android:name=".FloaterActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Hub.Intake"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity="" />
     </application>
 </manifest>

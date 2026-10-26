@@ -235,7 +235,7 @@ class PluginActivity : AppCompatActivity() {
         setIntent(intent)
         if (!::web.isInitialized) return
         if (newId == currentPluginId) {
-            web.evaluateJavascript("try{if(window.__jabraIntake)window.__jabraIntake()}catch(e){}", null)
+            web.evaluateJavascript("try{if(window.__jabraIntake)window.__jabraIntake()}catch(e){}try{if(window.__jabraFloater)window.__jabraFloater()}catch(e){}", null)
         } else {
             currentPluginId = newId
             val entry = (intent.getStringExtra("entry") ?: "index.html").trimStart('/')
@@ -477,6 +477,27 @@ class PluginActivity : AppCompatActivity() {
         /** Forget the pending intake once the plugin has taken it. */
         @JavascriptInterface
         fun intakeClear(): Boolean = ChapterIntake.clear(ctx)
+
+        /** Payload from this plugin's floating-bubble button (JSON: text, source, ts), or null. */
+        @JavascriptInterface
+        fun floaterGet(): String? = Floater.load(ctx, pluginId)
+
+        /** Forget the bubble payload once the plugin has used it. */
+        @JavascriptInterface
+        fun floaterClear(): Boolean = Floater.clear(ctx, pluginId)
+
+        /** True when the user has this plugin's button turned on in the bubble. */
+        @JavascriptInterface
+        fun floaterEnabled(): Boolean = Floater.isEnabled(ctx, pluginId)
+
+        /** Ask the user (with a confirm dialog) to add this plugin's button to the bubble. */
+        @JavascriptInterface
+        fun floaterRequestEnable(): Boolean {
+            val act = ctx as? android.app.Activity ?: return false
+            if (!Floater.supports(ctx, pluginId)) return false
+            main.post { Floater.askEnable(act, pluginId) }
+            return true
+        }
 
         @JavascriptInterface
         fun capabilities(): String = org.json.JSONArray(JabraApiContract.capabilities).toString()

@@ -332,6 +332,9 @@ class MainActivity : AppCompatActivity() {
         if (store.hasRollback(p.id)) {
             menu.menu.add(0, 6, 5, "Rollback to v${store.rollbackVersion(p.id) ?: "previous"}")
         }
+        if (Floater.supports(this, p.id)) {
+            menu.menu.add(0, 7, 6, if (Floater.isEnabled(this, p.id)) "Hide from floating bubble" else "Show in floating bubble")
+        }
         menu.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 1 -> open(p)
@@ -343,10 +346,20 @@ class MainActivity : AppCompatActivity() {
                 4 -> confirmRemove(p)
                 5 -> setFavorite(p.id, !favoriteIds().contains(p.id))
                 6 -> confirmRollback(p)
+                7 -> toggleFloater(p)
             }
             true
         }
         menu.show()
+    }
+
+    private fun toggleFloater(p: Plugin) {
+        if (Floater.isEnabled(this, p.id)) {
+            Floater.setEnabled(this, p.id, false)
+            Toast.makeText(this, "Removed from the floating bubble", Toast.LENGTH_SHORT).show()
+        } else {
+            Floater.askEnable(this, p.id)
+        }
     }
 
     private fun confirmRollback(p: Plugin) {
