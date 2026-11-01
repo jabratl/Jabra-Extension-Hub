@@ -7,7 +7,6 @@ import android.content.ContentValues
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.provider.MediaStore
-import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -25,12 +24,15 @@ import android.webkit.WebChromeClient.FileChooserParams
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.view.MenuItem
 import android.view.View
+import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.EditText
 import android.widget.Toast
 import androidx.activity.addCallback
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewCompat
@@ -46,8 +48,11 @@ import org.json.JSONObject
 class PluginActivity : AppCompatActivity() {
 
     private lateinit var web: WebView
-    private lateinit var progress: View
-    private lateinit var errorView: TextView
+    private lateinit var progress: ProgressBar
+    private lateinit var errorView: View
+    private lateinit var errorMsg: TextView
+    private var currentUrl: String = ""
+    private var rendererGone = false
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private var currentPluginId: String = ""
 
@@ -72,10 +77,18 @@ class PluginActivity : AppCompatActivity() {
 
         val toolbar = findViewById<MaterialToolbar>(R.id.toolbar)
         toolbar.title = name
-        toolbar.setNavigationIcon(R.drawable.ic_back)
+        toolbar.setNavigationIcon(R.drawable.q_ic_back)
+        toolbar.navigationContentDescription = "Back"
         toolbar.setNavigationOnClickListener { finish() }
+        toolbar.menu.add(0, MENU_RELOAD, 0, "Reload")
+            .setIcon(R.drawable.q_ic_refresh)
+            .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+        toolbar.setOnMenuItemClickListener {
+            if (it.itemId == MENU_RELOAD) { retry(); true } else false
+        }
 
         val store = PluginStore(this)
+        store.markUsed(id)
         val loader = WebViewAssetLoader.Builder()
             .setDomain(HOST)
             .addPathHandler("/plugins/", WebViewAssetLoader.InternalStoragePathHandler(this, store.root))
@@ -84,7 +97,10 @@ class PluginActivity : AppCompatActivity() {
         web = findViewById(R.id.web)
         progress = findViewById(R.id.progress)
         errorView = findViewById(R.id.error)
-        web.setBackgroundColor(Color.parseColor("#141629"))
+        errorMsg = findViewById(R.id.error_msg)
+        findViewById<View>(R.id.error_retry).setOnClickListener { retry() }
+        findViewById<View>(R.id.error_back).setOnClickListener { finish() }
+        web.setBackgroundColor(ContextCompat.getColor(this, R.color.q_bg))
         web.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -112,6 +128,12 @@ class PluginActivity : AppCompatActivity() {
             Log.e(TAG, "Could not install optional localStorage persistence shim", e)
         }
         web.webChromeClient = object : WebChromeClient() {
+            override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                if (errorView.visibility == View.VISIBLE) return
+                progress.progress = newProgress
+                progress.visibility = if (newProgress in 0..99) View.VISIBLE else View.INVISIBLE
+            }
+
             override fun onShowFileChooser(
                 webView: WebView?,
                 filePathCallback: ValueCallback<Array<Uri>>?,
@@ -175,11 +197,13 @@ class PluginActivity : AppCompatActivity() {
             ): WebResourceResponse? = loader.shouldInterceptRequest(request.url)
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                errorView.visibility = View.GONE
+                progress.progress = 0
                 progress.visibility = View.VISIBLE
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
-                progress.visibility = View.GONE
+                progress.visibility = View.INVISIBLE
             }
 
             override fun onReceivedError(
@@ -187,7 +211,9 @@ class PluginActivity : AppCompatActivity() {
                 request: WebResourceRequest,
                 error: WebResourceError
             ) {
-                if (request.isForMainFrame) showError()
+                if (request.isForMainFrame) {
+                    showError("This plugin could not be loaded (${error.description}). Check your connection if it uses online content, then try again.")
+                }
             }
 
             override fun onReceivedHttpError(
@@ -195,16 +221,20 @@ class PluginActivity : AppCompatActivity() {
                 request: WebResourceRequest,
                 errorResponse: WebResourceResponse
             ) {
-                if (request.isForMainFrame && errorResponse.statusCode >= 400) showError()
+                if (request.isForMainFrame && errorResponse.statusCode >= 400) {
+                    showError(
+                        if (errorResponse.statusCode == 404) "This plugin's start page is missing. Reinstall it from the Plugin store."
+                        else "This plugin could not be loaded (HTTP ${errorResponse.statusCode})."
+                    )
+                }
             }
 
             @Suppress("OVERRIDE_DEPRECATION")
             override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail): Boolean {
                 Log.e(TAG, "WebView renderer exited; didCrash=${detail.didCrash()}")
                 AppDiagnostics.record(this@PluginActivity, "WebView renderer exited for plugin $id; didCrash=${detail.didCrash()}")
-                progress.visibility = View.GONE
-                errorView.visibility = View.VISIBLE
-                errorView.text = "This plugin's WebView stopped unexpectedly. Go back to the Hub and reopen it. If it repeats, update Android System WebView and share the crash log."
+                rendererGone = true
+                showError("The plugin's web engine stopped unexpectedly. Try again. If it repeats, update Android System WebView and share the crash log.")
                 return true
             }
 
@@ -222,7 +252,8 @@ class PluginActivity : AppCompatActivity() {
             if (web.canGoBack()) web.goBack() else finish()
         }
 
-        web.loadUrl("https://$HOST/plugins/$id/$entry")
+        currentUrl = "https://$HOST/plugins/$id/$entry"
+        web.loadUrl(currentUrl)
     }
 
     /**
@@ -234,21 +265,37 @@ class PluginActivity : AppCompatActivity() {
         val newId = intent.getStringExtra("id") ?: return
         setIntent(intent)
         if (!::web.isInitialized) return
+        if (rendererGone) { recreate(); return }
         if (newId == currentPluginId) {
             web.evaluateJavascript("try{if(window.__jabraIntake)window.__jabraIntake()}catch(e){}try{if(window.__jabraFloater)window.__jabraFloater()}catch(e){}", null)
         } else {
             currentPluginId = newId
+            PluginStore(this).markUsed(newId)
             val entry = (intent.getStringExtra("entry") ?: "index.html").trimStart('/')
             findViewById<MaterialToolbar>(R.id.toolbar).title = intent.getStringExtra("name") ?: newId
             web.removeJavascriptInterface("JabraAPI")
             web.addJavascriptInterface(Bridge(this, newId), "JabraAPI")
-            web.loadUrl("https://$HOST/plugins/$newId/$entry")
+            currentUrl = "https://$HOST/plugins/$newId/$entry"
+            errorView.visibility = View.GONE
+            web.loadUrl(currentUrl)
         }
     }
 
-    private fun showError() {
-        progress.visibility = View.GONE
+    private fun showError(message: String) {
+        progress.visibility = View.INVISIBLE
+        errorMsg.text = message
         errorView.visibility = View.VISIBLE
+    }
+
+    /** Reload button and "Try again". After a renderer crash the WebView is unusable, so rebuild the screen. */
+    private fun retry() {
+        if (rendererGone) { recreate(); return }
+        if (errorView.visibility == View.VISIBLE) {
+            errorView.visibility = View.GONE
+            web.loadUrl(currentUrl)
+        } else {
+            web.reload()
+        }
     }
 
     override fun onDestroy() {
@@ -634,5 +681,6 @@ class PluginActivity : AppCompatActivity() {
     companion object {
         private const val HOST = "appassets.androidplatform.net"
         private const val TAG = "JabraPluginActivity"
+        private const val MENU_RELOAD = 1
     }
 }
