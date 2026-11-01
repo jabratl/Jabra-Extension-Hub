@@ -49,7 +49,7 @@ import java.util.Locale
 
 class BrowserActivity : AppCompatActivity() {
 
-    /** One browser tab: its WebView and the media found on its page. (0.9.7-T0: still only one tab exists.) */
+    /** One browser tab: its WebView and the media found on its page. (Hub 0.9.7) */
     internal class Tab(val web: WebView) {
         val found = LinkedHashMap<String, Media>()
     }
@@ -340,7 +340,7 @@ class BrowserActivity : AppCompatActivity() {
         for (t in tabs) applyDesktop(t.web)
     }
 
-    // ---------- tabs (Hub 0.9.7-t1): only the current tab's WebView is attached; the others are paused ----------
+    // ---------- tabs (Hub 0.9.7): only the current tab's WebView is attached; the others are paused ----------
 
     private fun updateTabBadge() {
         tabBtn?.text = "▢${tabs.size}"
@@ -617,7 +617,7 @@ class BrowserActivity : AppCompatActivity() {
             .show()
     }
 
-    // ---------- bookmark / history manager (Hub 0.9.6b): search, long-press actions ----------
+    // ---------- bookmark / history manager (Hub 0.9.7): search, long-press actions ----------
 
     private fun entryLabel(e: BrowserEntry, df: DateFormat): String {
         val name = if (e.title.isBlank()) e.url else e.title

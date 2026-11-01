@@ -208,7 +208,7 @@ object BrowserStore {
         return ImportResult(added, skipped, items.size)
     }
 
-    // ---------- manager helpers (Hub 0.9.6b): rename, move, delete one, history export ----------
+    // ---------- manager helpers (Hub 0.9.7): rename, move, delete one, history export ----------
 
     fun bookmarkFolders(ctx: Context): List<String> =
         load(ctx, BOOKMARKS).map { it.folder }.filter { it.isNotBlank() }.distinct().sorted()
