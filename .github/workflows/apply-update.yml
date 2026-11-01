@@ -1,0 +1,37 @@
+name: Apply update zip
+
+# Upload a zip into the "updates" folder of the repo. This workflow unpacks it over the project
+# (same folders and file names replace the old files), deletes the zip and commits the result.
+on:
+  push:
+    paths:
+      - 'updates/*.zip'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unpack update zips over the project
+        run: |
+          shopt -s nullglob
+          for z in updates/*.zip; do
+            echo "Applying $z"
+            unzip -o "$z" -x '.github/*' '__MACOSX/*' -d .
+            rm "$z"
+          done
+
+      - name: Commit
+        run: |
+          git config user.name "update-bot"
+          git config user.email "update-bot@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then echo "No changes"; exit 0; fi
+          git commit -m "Apply update zip"
+          git push
