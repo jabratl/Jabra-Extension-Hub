@@ -1,0 +1,7 @@
+Jabra Extension Hub v0.9.39.1 (code 60) - FIX: GitHub release build
+
+CHANGELOG 0.9.39.1:
+ - PluginActivity.kt: build failed with "Unresolved reference: ThemeStore" (lines 673-675, 703). No ThemeStore exists in the project files, so JabraAPI.theme() now reads the phone's light/dark setting directly; info().themeMode is "system".
+ - build.gradle.kts: version 0.9.39.1 (code 60).
+Could break: if you DO have a ThemeStore.kt on your PC (an in-app Light/Dark choice) that was never committed, this patch hides that choice from plugins. In that case commit ThemeStore.kt and skip this patch.
+Not built (no Kotlin compiler here). Braces/parens balanced.
