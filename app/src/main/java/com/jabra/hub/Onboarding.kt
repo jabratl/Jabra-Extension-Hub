@@ -66,7 +66,7 @@ object Onboarding {
             root.addView(r)
         }
         row(R.drawable.q_ic_apps, "Plugins", "Import a plugin .zip and run it natively on this phone.")
-        row(R.drawable.q_ic_globe, "Browser", "Ad blocker, per-site settings and a media panel, all in the menu.")
+        row(R.drawable.q_ic_globe, "Browser", "Ad blocker, per-site settings and a found list that catches videos, streams and subtitles. Tune it in Settings > Media settings.")
         row(R.drawable.q_ic_copy, "Scan copied text", "Copy some text, then send it to a plugin from the home screen or the bubble.")
 
         val sheet = BottomSheetDialog(a)

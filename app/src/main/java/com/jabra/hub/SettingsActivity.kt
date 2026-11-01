@@ -72,6 +72,12 @@ class SettingsActivity : AppCompatActivity() {
             }
             bubbleButtons(card)
         }
+        section(body, "Media") { card ->
+            row(card, "Media settings", "Find media on pages, library names, stream quality, wait between downloads") { MediaSettings.show(this) }
+            row(card, "Media Browser", "Open the Browser; the found list catches videos, streams and subtitles") {
+                startActivity(Intent(this, BrowserActivity::class.java))
+            }
+        }
         section(body, "Plugins") { card ->
             row(card, "Plugin updates", "Check the plugin store for new and updated plugins") {
                 Updater.checkPlugins(this, store, false) { }

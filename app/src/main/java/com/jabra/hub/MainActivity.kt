@@ -299,6 +299,23 @@ class MainActivity : AppCompatActivity() {
         val grid = findViewById<LinearLayout>(R.id.home_pins)
         grid.removeAllViews()
         val cols = ((resources.configuration.screenWidthDp - 40) / 96).coerceIn(3, 6)
+        // Built-in shortcut: the Media Browser (tap = open, long-press = Media settings).
+        run {
+            val row = LinearLayout(this)
+            row.orientation = LinearLayout.HORIZONTAL
+            val v = layoutInflater.inflate(R.layout.item_pin, row, false)
+            val letter = v.findViewById<TextView>(R.id.icon)
+            letter.text = "M"
+            letter.visibility = View.VISIBLE
+            v.findViewById<View>(R.id.icon_img).visibility = View.GONE
+            v.findViewById<TextView>(R.id.name).text = "Media Browser"
+            v.contentDescription = "Media Browser. Long-press for Media settings."
+            v.setOnClickListener { Q.tick(it); startActivity(Intent(this, BrowserActivity::class.java)) }
+            v.setOnLongClickListener { MediaSettings.show(this); true }
+            row.addView(v)
+            repeat(cols - 1) { row.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f)) }
+            grid.addView(row, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        }
         for (chunk in pinned.chunked(cols)) {
             val row = LinearLayout(this)
             row.orientation = LinearLayout.HORIZONTAL

@@ -67,6 +67,19 @@ object Floater {
 
     fun supports(ctx: Context, id: String) = entryFor(ctx, id) != null
 
+    /** First http(s) link in a shared or copied text (page title lines are skipped). */
+    fun firstLink(text: String): String? =
+        Regex("https?://[^\\s<>\"']+").find(text)?.value?.trimEnd('.', ',', ')', ';')
+
+    /** Open the first link of [text] in the Hub Browser; its found list scans the page (when "Find media" is on). */
+    fun openInBrowser(ctx: Context, text: String): Boolean {
+        val u = firstLink(text) ?: return false
+        return try {
+            ctx.startActivity(Intent(ctx, BrowserActivity::class.java).putExtra("url", u).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            true
+        } catch (_: Exception) { false }
+    }
+
     /**
      * Plugins that declare  "share": true  in manifest.json can receive a link from the Android Share sheet
      * ("Jabra" in the Share sheet, see ShareActivity). Independent of the bubble: no "floater" block is needed.

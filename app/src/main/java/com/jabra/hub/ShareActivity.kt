@@ -10,7 +10,7 @@ import android.widget.Toast
  * "Jabra": the one Share-sheet entry (Quiet Pill H5a). It decides where the shared content goes:
  *  - a file (docx, epub, html, a shared .txt) or text without a link  -> read as a chapter (IntakeActivity)
  *  - a link and no plugin accepts shared links                         -> read the page as a chapter
- *  - a link and a plugin declares  "share": true                       -> asks: that plugin, or read as a chapter
+ *  - a link and a plugin declares  "share": true                       -> asks: that plugin, scan in the Browser, or read as a chapter
  * Link hand-off is the old "Jabra Grab" flow: Floater.save, then the plugin reads it with JabraAPI.floaterGet()
  * (or gets window.__jabraFloater() when already open). Nothing is downloaded here.
  */
@@ -35,11 +35,16 @@ class ShareActivity : Activity() {
         if (grabbers.isEmpty()) { readAsChapter(); return }
 
         val novelName = all.firstOrNull { it.id == ChapterIntake.NOVEL_PLUGIN_ID }?.name ?: "Novel Assistant"
-        val labels = grabbers.map { it.name } + "Read as chapter: $novelName"
+        val browserLabel = if (MediaPrefs.detect(this)) "Scan in Browser (found list)" else "Open in Browser"
+        val labels = grabbers.map { it.name } + browserLabel + "Read as chapter: $novelName"
         AlertDialog.Builder(this)
             .setTitle("Send link to")
             .setItems(labels.toTypedArray()) { _, n ->
-                if (n < grabbers.size) deliver(grabbers[n].id, grabbers[n].name, grabbers[n].entry, text) else readAsChapter()
+                when {
+                    n < grabbers.size -> deliver(grabbers[n].id, grabbers[n].name, grabbers[n].entry, text)
+                    n == grabbers.size -> openInBrowser(text)
+                    else -> readAsChapter()
+                }
             }
             .setOnCancelListener { finish() }
             .show()
@@ -68,6 +73,14 @@ class ShareActivity : Activity() {
             AppDiagnostics.record(applicationContext, "Share: could not open the reader", e)
             Toast.makeText(this, "Could not open Jabra.", Toast.LENGTH_LONG).show()
         }
+        finish()
+    }
+
+    /** The link opens in the Hub Browser, whose found list scans the page. No link or no Browser = read as chapter. */
+    private fun openInBrowser(text: String) {
+        if (delivered) return
+        if (!Floater.openInBrowser(this, text)) { readAsChapter(); return }
+        delivered = true
         finish()
     }
 
