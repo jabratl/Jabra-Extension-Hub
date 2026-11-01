@@ -26,6 +26,7 @@ object JabraApiContract {
         "apiVersionInfo",
         "theme",
         "mediaDownloadOptions",
-        "mediaJobs"
+        "mediaJobs",
+        "mediaPrefs"
     )
 }

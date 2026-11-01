@@ -541,7 +541,8 @@ class PluginActivity : AppCompatActivity() {
             if (!(u.startsWith("https://") || u.startsWith("http://"))) return false
             val kind = MediaKind.of(u) ?: "file"
             val ua = android.webkit.WebSettings.getDefaultUserAgent(ctx)
-            Downloader(ctx.applicationContext).start(Media(u, kind, referer.take(2000), title.take(120)), ua) { st, done ->
+            // Streams follow the quality saved in the Hub's Media settings (0 = best).
+            Downloader(ctx.applicationContext).start(Media(u, kind, referer.take(2000), title.take(120)), ua, DlOptions(preferHeight = MediaPrefs.hlsHeight(ctx))) { st, done ->
                 if (done) main.post { Toast.makeText(ctx, st, Toast.LENGTH_LONG).show() }
             }
             return true
@@ -596,7 +597,7 @@ class PluginActivity : AppCompatActivity() {
             if (from.isNaN() || to.isNaN() || from < 0 || to < 0 || (to > 0 && to <= from)) return false
             val kind = MediaKind.of(u) ?: "file"
             val ua = android.webkit.WebSettings.getDefaultUserAgent(ctx)
-            Downloader(ctx.applicationContext).start(Media(u, kind, referer.take(2000), title.take(120)), ua, DlOptions(variant, from, to)) { st, done ->
+            Downloader(ctx.applicationContext).start(Media(u, kind, referer.take(2000), title.take(120)), ua, DlOptions(variant, from, to, MediaPrefs.hlsHeight(ctx))) { st, done ->
                 if (done) main.post { Toast.makeText(ctx, st, Toast.LENGTH_LONG).show() }
             }
             return true
@@ -620,6 +621,16 @@ class PluginActivity : AppCompatActivity() {
             }
             arr.toString()
         } catch (_: Exception) { "[]" }
+
+        /**
+         * The Hub's saved Media settings, read-only, as JSON: {detect, library, delayMs, hlsHeight}.
+         * detect = the Browser finds media on pages; hlsHeight = saved stream quality (0 = best). Capability "mediaPrefs".
+         */
+        @JavascriptInterface
+        fun mediaPrefs(): String = try {
+            JSONObject().put("detect", MediaPrefs.detect(ctx)).put("library", MediaPrefs.library(ctx))
+                .put("delayMs", MediaPrefs.delayMs(ctx)).put("hlsHeight", MediaPrefs.hlsHeight(ctx)).toString()
+        } catch (_: Exception) { "{}" }
 
         /** Open the Hub's Downloads screen (progress, cancel, play). */
         @JavascriptInterface
