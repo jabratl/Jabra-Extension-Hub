@@ -1,17 +1,19 @@
 # Handoff: Jabra Hub browser
-Type: MODIFY. Project: Jabra Hub browser. Base: jabra-hub v0.9.7-t0 (zip).
-Done: B0, B1 (0.9.6), B2 (0.9.6b manager), T0 (0.9.7-t0 refactor, no behaviour change).
+Type: MODIFY. Project: Jabra Hub browser. Base: jabra-hub v0.9.7-t1 (zip).
+Done: B0, B1 (0.9.6), B2 (0.9.6b), T0 (0.9.7-t0, build confirmed by user), T1 + T2 browser side (0.9.7-t1).
 
-T0 changes (BrowserActivity.kt only + build.gradle.kts):
-- `internal class Tab(val web: WebView)` with `found` map. Fields: `tabs: ArrayList<Tab>`, `curTab: Tab?`.
-- `web` and `found` are now private getters = current tab (`curTab!!`). All old call sites unchanged.
-- `setupTab(t)` = all WebView setup, moved out of onCreate; callbacks use `t` (own tab) and update UI only `if (t === curTab)`.
-- `internal inner class Sniff(tab)`; `onFound(tab, url, kind)`; `applyDesktop(w)` + `applyDesktopAll()`.
-- onPause pauses all tabs, onResume resumes current, onDestroy destroys all.
-Checks done: brackets balanced, no leftover bare `web` in setupTab, no old-style onFound calls. NOT compiled, NOT run on a device.
+T1/T2 changes:
+- BrowserActivity.kt: fields maxTabs=8, webHost/webIdx/webId/webLp (where the XML WebView sits; remembered in onCreate), tabBtn.
+  newTab(url, show): Boolean (limit toast), switchTo(t) (pause + detach old, attach new at webIdx with webLp, same id, refresh urlBar/chip/panel), closeTab(t) (last tab resets), showTabs() (rows built in code), addTabButton() (inserts a TextView before R.id.menu only if its parent is a horizontal LinearLayout; colour copied from R.id.close if it is a TextView, else grey), showLinkMenu(), onNewIntent().
+  setupTab: long-press listener (hitTestResult + requestFocusNodeHref), new-window tap uses newTab (falls back to same tab at the limit).
+  goBack: closes the tab when it cannot go back and more tabs exist. Clear browsing data: clearHistory on all tabs. Menu: ids 20 Tabs, 21 New tab (orders -2, -1).
+- AndroidManifest.xml: BrowserActivity launchMode singleTop.
+Checks done: brackets balanced, manifest edit verified. NOT compiled, NOT run on a device.
 
-USER MUST: build and confirm before T1. Test: normal browsing, found chip/panel with a video, download, bookmark, history, desktop toggle, pop-up block, back button, fullscreen video, rotate/app switch.
-Possible compile traps if the build fails: visibility of Media (defined outside the patch files; Tab is internal to be safe), `curTab!!` getters, local use of `this` inside setupTab lambdas. Send the first error lines.
-
-Next (only after the user confirms the build): T1 tab UI. Plan: tab count button, tab switcher dialog (title, close, new tab), `newTab(url)` = new WebView + `setupTab`, switch = swap the view in the container that holds R.id.web (find its parent ViewGroup), update urlBar/chip/progress from the tab. Needs `activity_browser.xml` (not in this zip: ask the user for it). T2: long-press link "Open in new tab", real new-window opens a tab, openBrowser from Hub/plugin adds a tab (PluginActivity.kt needed).
-Context line: Project: Jabra Hub browser. Mode: MODIFY. Base 0.9.7-t0 (build confirmed: yes/no). Done: B0-B2, T0. Next: T1+T2 (send activity_browser.xml and PluginActivity.kt).
+USER MUST test (see README_JABRA_V0.9.7-T1.txt). Likely trouble spots if something is off:
+1. Tab button not visible / wrong colour: top bar is not a horizontal LinearLayout or bar colours differ. Menu "Tabs (N)" still works. Send activity_browser.xml to fix properly.
+2. Sound or video keeps playing in a background tab: WebView.onPause may not stop media on this device; fix = also call pauseTimers / evaluate pause JS (planned in T3).
+3. First WebView comes from XML, new ones are plain WebView(this): look/overscroll can differ slightly.
+4. "Open in browser" from a plugin/Hub: onNewIntent only fires when BrowserActivity is the top activity (singleTop). If the browser is behind the plugin, a second browser instance opens. Fix needs PluginActivity.kt (where openBrowser starts the browser): add Intent.FLAG_ACTIVITY_REORDER_TO_FRONT (test on device that onNewIntent fires) or finish the plugin first. Please send PluginActivity.kt.
+Next: T3 (restore tabs after restart: urls, max 8, last active; background tab pause + cap; media chip per tab is already per tab) then R1 (new-tab page with bookmarks grid, search engine choice, address suggestions), R2-R4, F.
+Context line: Project: Jabra Hub browser. Mode: MODIFY. Base 0.9.7-t1 (build confirmed: yes/no). Done: B0-B2, T0, T1, T2 (browser side). Next: T2 plugin side (send PluginActivity.kt) + T3.

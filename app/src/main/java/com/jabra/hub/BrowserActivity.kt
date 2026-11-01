@@ -56,6 +56,12 @@ class BrowserActivity : AppCompatActivity() {
 
     private val tabs = ArrayList<Tab>()
     private var curTab: Tab? = null
+    private val maxTabs = 8
+    private var webHost: ViewGroup? = null
+    private var webIdx = 0
+    private var webId = View.NO_ID
+    private var webLp: ViewGroup.LayoutParams? = null
+    private var tabBtn: TextView? = null
 
     /** The WebView of the current tab. Older code keeps using "web" and "found" unchanged. */
     private val web: WebView get() = curTab!!.web
@@ -123,6 +129,11 @@ class BrowserActivity : AppCompatActivity() {
         val first = Tab(findViewById(R.id.web))
         tabs.add(first)
         curTab = first
+        val host = first.web.parent as ViewGroup
+        webHost = host
+        webIdx = host.indexOfChild(first.web)
+        webId = first.web.id
+        webLp = first.web.layoutParams
         urlBar = findViewById(R.id.url)
         chip = findViewById(R.id.chip)
         panel = findViewById(R.id.panel)
@@ -146,6 +157,7 @@ class BrowserActivity : AppCompatActivity() {
         }
 
         setupTab(first)
+        addTabButton()
 
         onBackPressedDispatcher.addCallback(this) {
             when {
@@ -205,7 +217,7 @@ class BrowserActivity : AppCompatActivity() {
                         if ((u.startsWith("http://") || u.startsWith("https://")) &&
                             !(adblock && AdBlock.isAdHost(request.url.host))
                         ) {
-                            t.web.post { t.web.loadUrl(u) }
+                            t.web.post { if (!newTab(u)) t.web.loadUrl(u) }
                         } else if (adblock) {
                             blockedCount++
                         }
@@ -303,6 +315,19 @@ class BrowserActivity : AppCompatActivity() {
             onFound(t, u, "file")
             Toast.makeText(this, "Added to the found list", Toast.LENGTH_SHORT).show()
         }
+        // Long-press on a link (also a linked image): open in new tab / copy.
+        t.web.setOnLongClickListener { v ->
+            val type = (v as WebView).hitTestResult.type
+            if (type == WebView.HitTestResult.SRC_ANCHOR_TYPE || type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) {
+                val h = android.os.Handler(android.os.Looper.getMainLooper()) { m ->
+                    val u = m.data.getString("url")
+                    if (!u.isNullOrBlank() && (u.startsWith("http://") || u.startsWith("https://"))) showLinkMenu(u)
+                    true
+                }
+                v.requestFocusNodeHref(h.obtainMessage())
+                true
+            } else false
+        }
     }
 
     private fun applyDesktop(w: WebView) {
@@ -313,6 +338,165 @@ class BrowserActivity : AppCompatActivity() {
 
     private fun applyDesktopAll() {
         for (t in tabs) applyDesktop(t.web)
+    }
+
+    // ---------- tabs (Hub 0.9.7-t1): only the current tab's WebView is attached; the others are paused ----------
+
+    private fun updateTabBadge() {
+        tabBtn?.text = "▢${tabs.size}"
+    }
+
+    /** Adds a small tab-count button next to the menu button (only if the top bar is a horizontal LinearLayout; the menu always has "Tabs"). */
+    private fun addTabButton() {
+        val menuBtn = findViewById<View>(R.id.menu)
+        val par = menuBtn.parent
+        if (par !is LinearLayout || par.orientation != LinearLayout.HORIZONTAL) return
+        val dp = resources.displayMetrics.density
+        val ref = (findViewById<View>(R.id.close) as? TextView) ?: (menuBtn as? TextView)
+        val b = TextView(this)
+        b.gravity = android.view.Gravity.CENTER
+        b.textSize = 14f
+        b.minWidth = (36 * dp).toInt()
+        b.setPadding((8 * dp).toInt(), 0, (8 * dp).toInt(), 0)
+        b.setTextColor(ref?.currentTextColor ?: 0xFFAAAAAA.toInt())
+        b.setOnClickListener { showTabs() }
+        par.addView(
+            b,
+            par.indexOfChild(menuBtn),
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        )
+        tabBtn = b
+        updateTabBadge()
+    }
+
+    /** Opens a tab (shown at once unless show = false). Returns false when the tab limit is reached. */
+    private fun newTab(url: String?, show: Boolean = true): Boolean {
+        if (webHost == null) return false
+        if (tabs.size >= maxTabs) {
+            Toast.makeText(this, "Tab limit ($maxTabs) reached. Close a tab first.", Toast.LENGTH_SHORT).show()
+            return false
+        }
+        val w = WebView(this)
+        w.id = webId
+        val t = Tab(w)
+        tabs.add(t)
+        setupTab(t)
+        if (show) switchTo(t) else updateTabBadge()
+        if (!url.isNullOrBlank()) w.loadUrl(url)
+        return true
+    }
+
+    private fun switchTo(t: Tab) {
+        val host = webHost ?: return
+        val old = curTab
+        if (old === t) return
+        if (old != null) {
+            old.web.onPause()
+            host.removeView(old.web)
+        }
+        curTab = t
+        if (t.web.parent == null) host.addView(t.web, webIdx, webLp)
+        t.web.onResume()
+        urlBar.setText(t.web.url ?: "")
+        progress.visibility = View.GONE
+        updateChip()
+        if (panel.visibility == View.VISIBLE) showPanel()
+        updateTabBadge()
+    }
+
+    private fun closeTab(t: Tab) {
+        val i = tabs.indexOf(t)
+        if (i < 0) return
+        if (tabs.size == 1) {
+            // The last tab is never removed: it goes back to a fresh page.
+            t.found.clear()
+            t.web.loadUrl("https://duckduckgo.com")
+            t.web.clearHistory()
+            updateChip()
+            Toast.makeText(this, "Last tab: opened a fresh page", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val next = tabs[if (i > 0) i - 1 else 1]
+        if (t === curTab) switchTo(next)
+        tabs.remove(t)
+        (t.web.parent as? ViewGroup)?.removeView(t.web)
+        t.web.destroy()
+        updateTabBadge()
+    }
+
+    private fun showTabs() {
+        val dp = resources.displayMetrics.density
+        val pad = (14 * dp).toInt()
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        val sv = ScrollView(this)
+        sv.addView(box)
+        var dlg: androidx.appcompat.app.AlertDialog? = null
+        fun fill() {
+            box.removeAllViews()
+            for (t in tabs.toList()) {
+                val row = LinearLayout(this)
+                row.orientation = LinearLayout.HORIZONTAL
+                row.gravity = android.view.Gravity.CENTER_VERTICAL
+                val title = t.web.title?.takeIf { it.isNotBlank() } ?: t.web.url ?: "New tab"
+                val label = TextView(this)
+                label.text = (if (t === curTab) "● " else "") + title + "\n" + (Uri.parse(t.web.url ?: "").host ?: "")
+                label.textSize = 15f
+                label.setPadding(pad, pad, pad, pad)
+                label.setOnClickListener {
+                    dlg?.dismiss()
+                    switchTo(t)
+                }
+                val x = TextView(this)
+                x.text = "✕"
+                x.textSize = 18f
+                x.setPadding(pad, pad, pad, pad)
+                x.setOnClickListener {
+                    closeTab(t)
+                    fill()
+                }
+                row.addView(label, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                row.addView(x)
+                box.addView(row)
+            }
+        }
+        fill()
+        dlg = MaterialAlertDialogBuilder(this)
+            .setTitle("Tabs (${tabs.size})")
+            .setView(sv)
+            .setNegativeButton("Close", null)
+            .setPositiveButton("New tab") { _, _ -> newTab("https://duckduckgo.com") }
+            .show()
+    }
+
+    private fun showLinkMenu(u: String) {
+        val items = arrayOf("Open in new tab", "Open in this tab", "Copy link")
+        MaterialAlertDialogBuilder(this)
+            .setTitle(u.take(80))
+            .setItems(items) { _, i ->
+                when (i) {
+                    0 -> {
+                        if (!newTab(u)) web.loadUrl(u)
+                    }
+                    1 -> web.loadUrl(u)
+                    2 -> {
+                        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        cm.setPrimaryClip(ClipData.newPlainText("link", u))
+                        Toast.makeText(this, "Link copied", Toast.LENGTH_SHORT).show()
+                    }
+                    else -> Unit
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /** A link sent to the browser while it is already open (singleTop) opens as a new tab. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val u = intent.getStringExtra("url")
+        if (!u.isNullOrBlank() && (u.startsWith("http://") || u.startsWith("https://"))) newTab(u)
     }
 
     private fun exitFullscreen() {
@@ -326,7 +510,10 @@ class BrowserActivity : AppCompatActivity() {
     }
 
     private fun goBack() {
-        if (web.canGoBack()) web.goBack() else finish()
+        val cur = curTab
+        if (web.canGoBack()) web.goBack()
+        else if (tabs.size > 1 && cur != null) closeTab(cur)
+        else finish()
     }
 
     private fun go(input: String) {
@@ -346,6 +533,8 @@ class BrowserActivity : AppCompatActivity() {
         val pageUrl = web.url ?: ""
         val marked = pageUrl.isNotEmpty() && BrowserStore.isBookmarked(this, pageUrl)
         val m = PopupMenu(this, anchor)
+        m.menu.add(0, 20, -2, "Tabs (${tabs.size})")
+        m.menu.add(0, 21, -1, "New tab")
         m.menu.add(0, 1, 0, if (marked) "★ Remove bookmark" else "☆ Add bookmark")
         m.menu.add(0, 2, 1, "Bookmarks")
         m.menu.add(0, 13, 1, "Bookmarks: export / import")
@@ -401,6 +590,8 @@ class BrowserActivity : AppCompatActivity() {
                 }
                 11 -> confirmClear()
                 12 -> startActivity(Intent(this, DownloadsActivity::class.java))
+                20 -> showTabs()
+                21 -> newTab("https://duckduckgo.com")
                 13 -> showBookmarkTools()
             }
             true
@@ -722,7 +913,7 @@ class BrowserActivity : AppCompatActivity() {
             .setPositiveButton("Clear") { _, _ ->
                 BrowserStore.clearHistory(this)
                 web.clearCache(true)
-                web.clearHistory()
+                for (t in tabs) t.web.clearHistory()
                 CookieManager.getInstance().removeAllCookies(null)
                 WebStorage.getInstance().deleteAllData()
                 Toast.makeText(this, "Cleared", Toast.LENGTH_SHORT).show()
