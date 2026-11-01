@@ -208,6 +208,40 @@ object BrowserStore {
         return ImportResult(added, skipped, items.size)
     }
 
+    // ---------- search engine and address-bar suggestions (Hub 0.9.9) ----------
+
+    data class Engine(val name: String, val url: String)
+
+    /** "%s" is replaced by the search words. */
+    val engines = listOf(
+        Engine("DuckDuckGo", "https://duckduckgo.com/?q=%s"),
+        Engine("Google", "https://www.google.com/search?q=%s"),
+        Engine("Bing", "https://www.bing.com/search?q=%s"),
+        Engine("Brave", "https://search.brave.com/search?q=%s"),
+        Engine("Startpage", "https://www.startpage.com/do/search?q=%s")
+    )
+
+    fun engineIndex(ctx: Context): Int = sp(ctx).getInt("engine", 0).coerceIn(0, engines.size - 1)
+
+    fun setEngineIndex(ctx: Context, i: Int) { sp(ctx).edit().putInt("engine", i.coerceIn(0, engines.size - 1)).apply() }
+
+    fun engine(ctx: Context): Engine = engines[engineIndex(ctx)]
+
+    fun searchUrl(ctx: Context, words: String): String =
+        engine(ctx).url.replace("%s", android.net.Uri.encode(words))
+
+    /** Bookmarks first, then history; title or link contains the text; no repeated links. */
+    fun suggest(ctx: Context, text: String, max: Int = 6): List<BrowserEntry> {
+        val q = text.trim().lowercase()
+        if (q.isEmpty()) return emptyList()
+        val seen = HashSet<String>()
+        val out = ArrayList<BrowserEntry>()
+        fun hit(e: BrowserEntry) = e.title.lowercase().contains(q) || e.url.lowercase().contains(q)
+        for (e in load(ctx, BOOKMARKS)) { if (out.size >= max) break; if (hit(e) && seen.add(e.url)) out.add(e) }
+        for (e in load(ctx, HISTORY)) { if (out.size >= max) break; if (hit(e) && seen.add(e.url)) out.add(e) }
+        return out
+    }
+
     // ---------- saved tabs (Hub 0.9.8): addresses of the open tabs, restored at the next start ----------
     private const val TABS = "tabs"
     private const val MAX_TABS = 8

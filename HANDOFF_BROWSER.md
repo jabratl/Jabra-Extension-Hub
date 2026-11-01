@@ -28,3 +28,14 @@ USER MUST test: menu opens; tab restore; Save history off; clear data; link long
 Still open: T2 plugin side (send PluginActivity.kt), tab button colour/position (send activity_browser.xml if wrong).
 Next: R1 new-tab page + search engine + suggestions, then R2-R4, F.
 Context line: Project: Jabra Hub browser. Mode: MODIFY. Base 0.9.8 (build: yes/no, validator: pass/fail). Done: B0-B2, T0-T3, T2 browser side. Next: T2 plugin side (PluginActivity.kt) + R1.
+
+
+## 0.9.9 (this zip)
+Done: T2 plugin side (user-confirmed working: PluginActivity.Bridge.openBrowser now adds FLAG_ACTIVITY_REORDER_TO_FRONT or FLAG_ACTIVITY_SINGLE_TOP; PluginActivity.kt is NOT in this zip, the user applied the patch in their own project - ask for the file again if it must be edited).
+R1: NewTabPage.kt (new): https://jabra.newtab/ is answered by BrowserActivity's shouldInterceptRequest (HTML: search box, bookmark tiles, recent history), so back/forward/reload work. Not stored in history/last_url; address bar shows empty. BrowserStore: engines list (index in browser_prefs key "engine"), engine(), searchUrl(), suggest(). BrowserActivity: setUrlText(), showSuggest() (ListPopupWindow under the bar, non-modal), chooseEngine() (menu id 22, order 2), go() uses the chosen engine, all "https://duckduckgo.com" defaults replaced by NewTabPage.URL, tabHost() for the tab list.
+Rules learned: menu orders must be >= 0. Layout activity_browser.xml was never seen; everything is built in code.
+Checks done: brackets balanced, no leftover duckduckgo default URLs. NOT compiled, NOT run on a device.
+USER MUST test: see README_JABRA_V0.9.9.txt. Likely trouble spots: (1) suggestion list width/position if the url bar parent is odd; (2) ListPopupWindow stealing keyboard focus (then set isFocusable false / use a PopupWindow); (3) new-tab page blank if shouldInterceptRequest is not hit for the https://jabra.newtab/ URL (check AdBlock/other interceptors); (4) back from a site opened from the new-tab page should return to the page.
+Not done: favicons on tiles, per-engine suggestions from the web, editing tiles, "set as home page".
+Next: R2 (find in page, text zoom, dark-page mode, save page), R3 (media panel: select all, filter, copy link, send all to Media Grabber via Floater.kt), R4 (ad-block per-site allow-list, per-site desktop mode, Downloads list after restart), F (360/410px, dark/light, build, device test, changelog).
+Context line: Project: Jabra Hub browser. Mode: MODIFY. Base 0.9.9 (build: yes/no, validator: pass/fail). Done: B0-B2, T0-T3, T2 browser+plugin side, R1. Next: R2.

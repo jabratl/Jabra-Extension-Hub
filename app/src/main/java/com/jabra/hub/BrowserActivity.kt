@@ -10,6 +10,8 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
 import android.os.Message
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
@@ -24,9 +26,11 @@ import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.ValueCallback
 import android.webkit.WebViewClient
+import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ListPopupWindow
 import android.widget.PopupMenu
 import android.widget.RadioButton
 import android.widget.RadioGroup
@@ -75,6 +79,11 @@ class BrowserActivity : AppCompatActivity() {
     private lateinit var progress: ProgressBar
     private lateinit var downloader: Downloader
     private val found: LinkedHashMap<String, Media> get() = curTab!!.found
+
+    // address-bar suggestions (Hub 0.9.9)
+    private var suggestPopup: ListPopupWindow? = null
+    private var suggestItems: List<BrowserEntry> = emptyList()
+    private var suppressSuggest = false
 
     private var adblock = true
     private var desktop = false
@@ -159,11 +168,23 @@ class BrowserActivity : AppCompatActivity() {
             } else false
         }
 
+        urlBar.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) {}
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                showSuggest(s?.toString().orEmpty())
+            }
+        })
+        urlBar.setOnFocusChangeListener { _, has ->
+            if (has) urlBar.post { urlBar.selectAll() } else dismissSuggest()
+        }
+
         setupTab(first)
         addTabButton()
 
         onBackPressedDispatcher.addCallback(this) {
             when {
+                suggestPopup?.isShowing == true -> dismissSuggest()
                 customView != null -> exitFullscreen()
                 panel.visibility == View.VISIBLE -> hidePanel()
                 else -> goBack()
@@ -173,7 +194,7 @@ class BrowserActivity : AppCompatActivity() {
         val ext = intent.getStringExtra("url")
         val saved = BrowserStore.savedTabs(this)
         if (saved.isEmpty()) {
-            web.loadUrl(ext ?: BrowserStore.lastUrl(this) ?: "https://duckduckgo.com")
+            web.loadUrl(ext ?: BrowserStore.lastUrl(this) ?: NewTabPage.URL)
         } else {
             first.pending = saved[0].first
             first.savedTitle = saved[0].second
@@ -285,6 +306,7 @@ class BrowserActivity : AppCompatActivity() {
 
         t.web.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                if (NewTabPage.isNewTab(request.url.toString())) return NewTabPage.response(this@BrowserActivity, request.url)
                 val u = request.url.toString()
                 if (adblock && !request.isForMainFrame && AdBlock.isBlocked(u, request.url.host)) {
                     blockedCount++
@@ -311,7 +333,7 @@ class BrowserActivity : AppCompatActivity() {
                 t.found.clear()
                 blockedCount = 0
                 if (t === curTab) {
-                    urlBar.setText(url)
+                    setUrlText(url)
                     updateChip()
                     if (panel.visibility == View.VISIBLE) showPanel()
                 }
@@ -320,8 +342,10 @@ class BrowserActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView, url: String) {
                 // Fallback for WebViews without document-start scripts (the script guards against running twice).
                 view.evaluateJavascript(AdBlock.PAGE_SCRIPT, null)
-                BrowserStore.addHistory(this@BrowserActivity, url, view.title ?: "")
-                if (t === curTab) BrowserStore.setLastUrl(this@BrowserActivity, url)
+                if (!NewTabPage.isNewTab(url)) {
+                    BrowserStore.addHistory(this@BrowserActivity, url, view.title ?: "")
+                    if (t === curTab) BrowserStore.setLastUrl(this@BrowserActivity, url)
+                }
             }
         }
         t.web.setDownloadListener { u, _, _, _, _ ->
@@ -420,7 +444,7 @@ class BrowserActivity : AppCompatActivity() {
         if (t.web.parent == null) host.addView(t.web, webIdx, webLp)
         t.web.onResume()
         loadPending(t)
-        urlBar.setText(t.web.url ?: t.pending ?: "")
+        setUrlText(t.web.url ?: t.pending ?: "")
         progress.visibility = View.GONE
         updateChip()
         if (panel.visibility == View.VISIBLE) showPanel()
@@ -433,7 +457,7 @@ class BrowserActivity : AppCompatActivity() {
         if (tabs.size == 1) {
             // The last tab is never removed: it goes back to a fresh page.
             t.found.clear()
-            t.web.loadUrl("https://duckduckgo.com")
+            t.web.loadUrl(NewTabPage.URL)
             t.web.clearHistory()
             updateChip()
             Toast.makeText(this, "Last tab: opened a fresh page", Toast.LENGTH_SHORT).show()
@@ -463,7 +487,7 @@ class BrowserActivity : AppCompatActivity() {
                 row.gravity = android.view.Gravity.CENTER_VERTICAL
                 val title = t.web.title?.takeIf { it.isNotBlank() } ?: t.savedTitle.takeIf { it.isNotBlank() } ?: t.web.url ?: t.pending ?: "New tab"
                 val label = TextView(this)
-                label.text = (if (t === curTab) "● " else "") + title + "\n" + (Uri.parse(t.web.url ?: t.pending ?: "").host ?: "")
+                label.text = (if (t === curTab) "● " else "") + title + "\n" + tabHost(t)
                 label.textSize = 15f
                 label.setPadding(pad, pad, pad, pad)
                 label.setOnClickListener {
@@ -488,7 +512,7 @@ class BrowserActivity : AppCompatActivity() {
             .setTitle("Tabs (${tabs.size})")
             .setView(sv)
             .setNegativeButton("Close", null)
-            .setPositiveButton("New tab") { _, _ -> newTab("https://duckduckgo.com") }
+            .setPositiveButton("New tab") { _, _ -> newTab(NewTabPage.URL) }
             .show()
     }
 
@@ -532,6 +556,78 @@ class BrowserActivity : AppCompatActivity() {
         customCb = null
     }
 
+    // ---------- address-bar suggestions and search engine (Hub 0.9.9) ----------
+
+    /** Sets the address text without opening the suggestion list. The new-tab page shows an empty bar. */
+    private fun setUrlText(u: String?) {
+        suppressSuggest = true
+        urlBar.setText(if (NewTabPage.isNewTab(u)) "" else (u ?: ""))
+        suppressSuggest = false
+        dismissSuggest()
+    }
+
+    private fun tabHost(t: Tab): String {
+        val u = t.web.url ?: t.pending ?: ""
+        return if (NewTabPage.isNewTab(u)) "" else (Uri.parse(u).host ?: "")
+    }
+
+    private fun dismissSuggest() {
+        suggestPopup?.dismiss()
+        suggestPopup = null
+    }
+
+    private fun showSuggest(text: String) {
+        val q = text.trim()
+        if (q.isEmpty() || suppressSuggest || !urlBar.hasFocus()) {
+            dismissSuggest()
+            return
+        }
+        val items = BrowserStore.suggest(this, q)
+        suggestItems = items
+        val marks = BrowserStore.bookmarks(this).map { it.url }.toHashSet()
+        val rows = ArrayList<String>()
+        rows.add("\uD83D\uDD0D  " + q)
+        for (e in items) {
+            rows.add((if (e.url in marks) "★ " else "\uD83D\uDD58 ") + e.title.ifBlank { e.url }.take(80) + "\n" + e.url.removePrefix("https://").removePrefix("http://").take(90))
+        }
+        val anchor = (urlBar.parent as? View) ?: urlBar
+        val p = suggestPopup ?: ListPopupWindow(this).also {
+            it.anchorView = anchor
+            it.inputMethodMode = ListPopupWindow.INPUT_METHOD_NEEDED
+            it.isModal = false
+            it.setOnItemClickListener { _, _, pos, _ ->
+                val target = if (pos == 0) urlBar.text.toString() else suggestItems.getOrNull(pos - 1)?.url ?: urlBar.text.toString()
+                dismissSuggest()
+                go(target)
+                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                imm.hideSoftInputFromWindow(urlBar.windowToken, 0)
+                urlBar.clearFocus()
+            }
+            suggestPopup = it
+        }
+        p.width = anchor.width.coerceAtLeast(1)
+        p.setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, rows))
+        try {
+            p.show()
+        } catch (_: Exception) {
+            suggestPopup = null
+        }
+    }
+
+    private fun chooseEngine() {
+        val names = BrowserStore.engines.map { it.name }.toTypedArray()
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Search engine")
+            .setSingleChoiceItems(names, BrowserStore.engineIndex(this)) { d, i ->
+                BrowserStore.setEngineIndex(this, i)
+                d.dismiss()
+                Toast.makeText(this, "Search with " + names[i], Toast.LENGTH_SHORT).show()
+                for (t in tabs) if (NewTabPage.isNewTab(t.web.url)) t.web.reload()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun goBack() {
         val cur = curTab
         if (web.canGoBack()) web.goBack()
@@ -544,7 +640,7 @@ class BrowserActivity : AppCompatActivity() {
         if (t.isEmpty()) return
         val target = when {
             t.startsWith("http://") || t.startsWith("https://") -> t
-            t.contains(" ") || !t.contains(".") -> "https://duckduckgo.com/?q=" + Uri.encode(t)
+            t.contains(" ") || !t.contains(".") -> BrowserStore.searchUrl(this, t)
             else -> "https://$t"
         }
         web.loadUrl(target)
@@ -553,7 +649,7 @@ class BrowserActivity : AppCompatActivity() {
     // ---------- menu ----------
 
     private fun showMenu(anchor: View) {
-        val pageUrl = web.url ?: ""
+        val pageUrl = web.url?.takeUnless { NewTabPage.isNewTab(it) } ?: ""
         val marked = pageUrl.isNotEmpty() && BrowserStore.isBookmarked(this, pageUrl)
         val m = PopupMenu(this, anchor)
         m.menu.add(0, 20, 0, "Tabs (${tabs.size})")
@@ -562,6 +658,7 @@ class BrowserActivity : AppCompatActivity() {
         m.menu.add(0, 2, 1, "Bookmarks")
         m.menu.add(0, 13, 1, "Bookmarks: export / import")
         m.menu.add(0, 3, 2, "History")
+        m.menu.add(0, 22, 2, "Search engine: " + BrowserStore.engine(this).name)
         m.menu.add(0, 4, 3, "Forward")
         m.menu.add(0, 5, 4, "Reload")
         val ab = m.menu.add(0, 6, 5, "Ad blocker" + if (adblock) " (blocked $blockedCount)" else "")
@@ -614,7 +711,8 @@ class BrowserActivity : AppCompatActivity() {
                 11 -> confirmClear()
                 12 -> startActivity(Intent(this, DownloadsActivity::class.java))
                 20 -> showTabs()
-                21 -> newTab("https://duckduckgo.com")
+                21 -> newTab(NewTabPage.URL)
+                22 -> chooseEngine()
                 13 -> showBookmarkTools()
             }
             true
@@ -1142,6 +1240,7 @@ class BrowserActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
+        dismissSuggest()
         for (t in tabs) t.web.onPause()
         saveTabs()
         super.onPause()
@@ -1153,6 +1252,7 @@ class BrowserActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        dismissSuggest()
         for (t in tabs) t.web.destroy()
         super.onDestroy()
     }
