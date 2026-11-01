@@ -121,3 +121,18 @@ Not done: edge-to-edge/insets, TalkBack pass on old dialogs (filter, link menu, 
 Next: D6 polish: 360/410px layouts, edge-to-edge + insets (pill, sheet, tab grid), find bar colours (q_*), TalkBack labels on remaining dialogs, font scale 1.3, fixes from the user's device tests. Ask for build results, crash logs, screenshots.
 Context line: Project: Jabra Hub browser. Mode: MODIFY. Base 0.9.17 (build: yes/no, validator: pass/fail). Done: B0-B2, T0-T3, R1-R4, D0-D5. Next: D6.
 
+
+## 0.9.18 (this zip) - Quiet Pill D6 (code-only polish)
+Done: D6. Base 0.9.17 (no build result reported yet for 0.9.14-0.9.17). Quiet Pill plan D0-D6 is now complete in code; everything still needs a build + device test.
+Changed (BrowserActivity.kt only + build.gradle.kts 0.9.18 / code 38):
+- showFind(): q_pill background, margins 12/8dp, q_* colours, ImageView buttons (q_ic_back rotated 90/-90 for previous/next, q_ic_close) 48dp with contentDescription; old glyph buttons gone.
+- showTabs(): columns = (screenWidthDp / 170) in 2..4; page root (content child 0) set NO_HIDE_DESCENDANTS while the grid is open, restored in hideTabs end action; overlay accessibilityPaneTitle "Tabs".
+- showPanel(): panel height = min(360dp, 60% of page height).
+- ellipsize on menu quick labels and select-bar count; removed folder emoji in the bookmarks dialog.
+DECISION: no edge-to-edge (targetSdk 34, bars already = bg colour, IME/adjustResize untested). If wanted later: WindowCompat.setDecorFitsSystemWindows(false) + insets on root (top), pillWrap (bottom, max of nav and IME), tab overlay, find bar, sheets; and re-test keyboard. Raising targetSdk to 35 would force it.
+Light mode: not planned (Theme.Hub is dark only).
+Checks done: brackets balanced, resources exist. NOT compiled, NOT run, NOT rendered at 360/410/1280 px.
+NOT tested: everything on device; likely first problems: compile errors (never built since 0.9.13), BottomSheetDialog handle/background, pill + keyboard, jerky shrink animation, thumbnails blank, swipe vs scroll, select bar width at 360 dp, find bar over the pill.
+Next: FIX mode. Send the build result (errors), crash logs and screenshots; fix one problem group per chat. If the build is clean and works: remaining ideas = edge-to-edge, light mode, PixelCopy thumbnails, saved thumbnails, TalkBack custom close action on tab cards.
+Context line: Project: Jabra Hub browser. Mode: FIX. Base 0.9.18 (build: yes/no, validator: pass/fail). Done: B0-B2, T0-T3, R1-R4, D0-D6. Next: fixes from device test (send build log / screenshots).
+

@@ -679,6 +679,7 @@ class BrowserActivity : AppCompatActivity() {
         ov.addView(col, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
         var curRow: View? = null
+        val cols = (resources.configuration.screenWidthDp / 170).coerceIn(2, 4)
         fun fill() {
             grid.removeAllViews()
             count.text = "${tabs.size} / $maxTabs"
@@ -688,7 +689,7 @@ class BrowserActivity : AppCompatActivity() {
             while (i < list.size) {
                 val row = LinearLayout(this)
                 row.orientation = LinearLayout.HORIZONTAL
-                for (j in 0..1) {
+                for (j in 0 until cols) {
                     val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                     lp.setMargins(dp(4), dp(4), dp(4), dp(4))
                     if (i + j < list.size) {
@@ -706,12 +707,14 @@ class BrowserActivity : AppCompatActivity() {
                     }
                 }
                 grid.addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-                i += 2
+                i += cols
             }
         }
         fill()
 
         tabsOverlay = ov
+        root.getChildAt(0)?.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+        ov.accessibilityPaneTitle = "Tabs"
         root.addView(ov, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         ov.alpha = 0f
         ov.scaleX = 0.96f
@@ -729,7 +732,9 @@ class BrowserActivity : AppCompatActivity() {
         ov.animate().alpha(0f).scaleX(0.96f).scaleY(0.96f).setDuration(160L)
             .setInterpolator(AccelerateInterpolator())
             .withEndAction {
-                (ov.parent as? ViewGroup)?.removeView(ov)
+                val par = ov.parent as? ViewGroup
+                par?.removeView(ov)
+                par?.getChildAt(0)?.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
                 if (tabsOverlay === ov) tabsOverlay = null
             }.start()
     }
@@ -1145,36 +1150,41 @@ class BrowserActivity : AppCompatActivity() {
 
     private fun showFind() {
         findInput?.let { it.requestFocus(); showKeyboard(it); return }
-        val dp = resources.displayMetrics.density
+        fun dp(n: Int) = Q.dp(this, n)
         val bar = LinearLayout(this)
         bar.orientation = LinearLayout.HORIZONTAL
         bar.gravity = Gravity.CENTER_VERTICAL
-        bar.setBackgroundColor(0xF2202338.toInt())
-        bar.setPadding((10 * dp).toInt(), (6 * dp).toInt(), (6 * dp).toInt(), (6 * dp).toInt())
-        bar.elevation = 8 * dp
+        bar.setBackgroundResource(R.drawable.q_pill)
+        bar.minimumHeight = dp(56)
+        bar.setPadding(dp(20), 0, dp(4), 0)
+        bar.elevation = dp(8).toFloat()
 
         val input = EditText(this)
         input.hint = "Find in page"
-        input.setHintTextColor(0xFF9A9DBB.toInt())
-        input.setTextColor(0xFFFFFFFF.toInt())
+        input.setHintTextColor(Q.color(this, R.color.q_text_sub))
+        input.setTextColor(Q.color(this, R.color.q_text))
+        input.textSize = 15f
         input.isSingleLine = true
         input.imeOptions = EditorInfo.IME_ACTION_SEARCH
         input.setBackgroundColor(0x00000000)
 
         val count = TextView(this)
-        count.setTextColor(0xFF9A9DBB.toInt())
+        count.setTextColor(Q.color(this, R.color.q_text_sub))
         count.textSize = 13f
-        count.setPadding((8 * dp).toInt(), 0, (8 * dp).toInt(), 0)
+        count.setPadding(dp(8), 0, dp(8), 0)
 
-        fun btn(label: String, action: () -> Unit): TextView {
-            val b = TextView(this)
-            b.text = label
-            b.textSize = 18f
-            b.setTextColor(0xFFFFFFFF.toInt())
-            b.gravity = Gravity.CENTER
-            b.minWidth = (40 * dp).toInt()
-            b.setPadding(0, (8 * dp).toInt(), 0, (8 * dp).toInt())
-            b.setOnClickListener { action() }
+        /** 48dp icon button (the arrows are the back arrow turned). */
+        fun btn(icon: Int, rot: Float, desc: String, action: () -> Unit): ImageView {
+            val b = ImageView(this)
+            b.setImageDrawable(Q.icon(this, icon))
+            b.rotation = rot
+            b.scaleType = ImageView.ScaleType.CENTER
+            b.contentDescription = desc
+            b.isClickable = true
+            b.setOnClickListener {
+                Q.tick(it)
+                action()
+            }
             return b
         }
 
@@ -1201,12 +1211,14 @@ class BrowserActivity : AppCompatActivity() {
 
         bar.addView(input, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         bar.addView(count)
-        bar.addView(btn("▲") { web.findNext(false) })
-        bar.addView(btn("▼") { web.findNext(true) })
-        bar.addView(btn("✕") { hideFind() })
+        bar.addView(btn(R.drawable.q_ic_back, 90f, "Previous match") { web.findNext(false) }, LinearLayout.LayoutParams(dp(48), dp(48)))
+        bar.addView(btn(R.drawable.q_ic_back, -90f, "Next match") { web.findNext(true) }, LinearLayout.LayoutParams(dp(48), dp(48)))
+        bar.addView(btn(R.drawable.q_ic_close, 0f, "Close find") { hideFind() }, LinearLayout.LayoutParams(dp(48), dp(48)))
 
         val root = findViewById<ViewGroup>(android.R.id.content)
-        root.addView(bar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
+        val flp = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM)
+        flp.setMargins(dp(12), 0, dp(12), dp(8))
+        root.addView(bar, flp)
         findBar = bar
         findInput = input
         findCount = count
@@ -1451,6 +1463,7 @@ class BrowserActivity : AppCompatActivity() {
             tv.text = label
             tv.textSize = 11f
             tv.maxLines = 1
+            tv.ellipsize = android.text.TextUtils.TruncateAt.END
             tv.gravity = Gravity.CENTER
             tv.setTextColor(Q.color(this, R.color.q_text_sub))
             tv.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
@@ -1651,7 +1664,7 @@ class BrowserActivity : AppCompatActivity() {
     private fun entryLabel(e: BrowserEntry, df: DateFormat): String {
         val name = if (e.title.isBlank()) e.url else e.title
         return name + "\n" + (Uri.parse(e.url).host ?: "") + "  ·  " + df.format(Date(e.ts)) +
-            (if (e.folder.isNotBlank()) "  ·  📁 " + e.folder else "")
+            (if (e.folder.isNotBlank()) "  ·  " + e.folder else "")
     }
 
     private fun showManager(isBookmarks: Boolean) {
@@ -2034,6 +2047,14 @@ class BrowserActivity : AppCompatActivity() {
         } else {
             panel.translationY = 0f
         }
+        val pageH = (panel.parent as? View)?.height ?: 0
+        if (pageH > 0) {
+            val want = minOf(dp(360), (pageH * 0.6f).toInt())
+            if (panel.layoutParams.height != want) {
+                panel.layoutParams.height = want
+                panel.requestLayout()
+            }
+        }
         chip.visibility = View.GONE
         panelList.removeAllViews()
         panelBar.removeAllViews()
@@ -2122,6 +2143,7 @@ class BrowserActivity : AppCompatActivity() {
             val count = TextView(this)
             count.textSize = 14f
             count.maxLines = 1
+            count.ellipsize = android.text.TextUtils.TruncateAt.END
             count.setTextColor(Q.color(this, R.color.q_text))
             val allBtn = TextView(this)
             allBtn.textSize = 14f
