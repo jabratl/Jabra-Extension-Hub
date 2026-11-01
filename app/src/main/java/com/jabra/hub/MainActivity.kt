@@ -66,7 +66,8 @@ class MainActivity : AppCompatActivity() {
         categoryFilter = managerPrefs.getString("category_filter", "All categories") ?: "All categories"
         sortMode = managerPrefs.getString("sort_mode", "name_asc") ?: "name_asc"
         val sp = getSharedPreferences("hub", MODE_PRIVATE)
-        if (!sp.getBoolean("seeded", false)) {
+        val firstRun = !sp.getBoolean("seeded", false)
+        if (firstRun) {
             try { store.installSample() } catch (_: Exception) {}
             sp.edit().putBoolean("seeded", true).apply()
         }
@@ -85,17 +86,19 @@ class MainActivity : AppCompatActivity() {
         homeCount = findViewById(R.id.home_count)
         fab = findViewById(R.id.fab)
         nav = findViewById(R.id.bottom_navigation)
-        fab.setOnClickListener { pickPluginZip() }
+        fab.setOnClickListener { Q.tick(it); pickPluginZip() }
         findViewById<View>(R.id.app_menu).setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
         findViewById<View>(R.id.filter_sort).setOnClickListener { anchor -> showFilterSortMenu(anchor) }
-        findViewById<View>(R.id.home_pill).setOnClickListener { showTab(TAB_PLUGINS, focusSearch = true) }
-        findViewById<View>(R.id.home_import).setOnClickListener { pickPluginZip() }
+        findViewById<View>(R.id.home_pill).setOnClickListener { Q.tick(it); showTab(TAB_PLUGINS, focusSearch = true) }
+        findViewById<View>(R.id.home_import).setOnClickListener { Q.tick(it); pickPluginZip() }
         findViewById<View>(R.id.home_scan).setOnClickListener {
+            Q.tick(it)
             startActivity(Intent(this, IntakeActivity::class.java).setAction(ChapterIntake.ACTION_SCAN_CLIPBOARD))
         }
         nav.setOnItemSelectedListener { item ->
             // Selecting an item from showTab() must not start showTab() again.
             if (syncingNav) return@setOnItemSelectedListener true
+            Q.tick(nav)
             when (item.itemId) {
                 R.id.nav_home -> { showTab(TAB_HOME); true }
                 R.id.nav_plugins -> { showTab(TAB_PLUGINS); true }
@@ -107,6 +110,7 @@ class MainActivity : AppCompatActivity() {
         }
         backToHome = onBackPressedDispatcher.addCallback(this, false) { showTab(TAB_HOME) }
         showTab(savedInstanceState?.getInt("tab", TAB_HOME) ?: TAB_HOME)
+        if (firstRun && savedInstanceState == null) Onboarding.showOnce(this)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

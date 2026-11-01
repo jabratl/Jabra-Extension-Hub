@@ -180,7 +180,7 @@ class SettingsActivity : AppCompatActivity() {
         sw.contentDescription = title
         val listener: (Boolean) -> Unit = { on -> onChange(on) }
         bubbleListener = listener
-        sw.setOnCheckedChangeListener { _, on -> listener(on) }
+        sw.setOnCheckedChangeListener { v, on -> Q.tick(v); listener(on) }
         r.setOnClickListener { sw.toggle() }
         r.addView(sw)
         card.addView(r, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
@@ -207,7 +207,8 @@ class SettingsActivity : AppCompatActivity() {
             val sw = SwitchCompat(this)
             sw.contentDescription = "Show ${p.name} in the bubble"
             sw.isChecked = Floater.isEnabled(this, p.id)
-            sw.setOnCheckedChangeListener { _, on ->
+            sw.setOnCheckedChangeListener { v, on ->
+                Q.tick(v)
                 Floater.setEnabled(this, p.id, on)
                 if (on && !BubbleService.isEnabled(this)) {
                     Toast.makeText(this, "Turn on the floating bubble above to see this button.", Toast.LENGTH_LONG).show()

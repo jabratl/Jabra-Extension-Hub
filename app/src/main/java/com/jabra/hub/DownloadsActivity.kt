@@ -88,7 +88,7 @@ class DownloadsActivity : AppCompatActivity() {
             c.minHeight = dp(40)
             c.setPadding(dp(16), 0, dp(16), 0)
             c.textSize = 13f
-            c.setOnClickListener { filter = f; lastSig = ""; render() }
+            c.setOnClickListener { Q.tick(it); filter = f; lastSig = ""; render() }
             val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             lp.rightMargin = dp(8)
             chipRow.addView(c, lp)
@@ -108,6 +108,12 @@ class DownloadsActivity : AppCompatActivity() {
         empty.setTextColor(getColor(R.color.q_text_sub))
         empty.gravity = Gravity.CENTER
         empty.setPadding(dp(20), dp(48), dp(20), dp(20))
+        empty.compoundDrawablePadding = dp(12)
+        Q.icon(this, R.drawable.q_ic_download)?.let {
+            it.setTint(getColor(R.color.q_text_sub))
+            it.setBounds(0, 0, dp(56), dp(56))
+            empty.setCompoundDrawables(null, it, null, null)
+        }
 
         setContentView(root)
     }
@@ -272,7 +278,7 @@ class DownloadsActivity : AppCompatActivity() {
         b.setImageResource(icon)
         b.contentDescription = desc
         b.imageTintList = if (accent) ColorStateList.valueOf(getColor(R.color.q_accent)) else null
-        b.setOnClickListener { onClick() }
+        b.setOnClickListener { Q.tick(it); onClick() }
     }
 
     private fun cancel(j: DlJob) {

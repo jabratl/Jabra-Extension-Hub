@@ -1,19 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Quiet Pill tokens. The app theme is fixed dark (Theme.Material3.Dark), so these are the dark values in values/. Same palette as br_*; accent = app accent #FF8A5B. -->
+<!-- Quiet Pill tokens (H7a). values/ = LIGHT, values-night/ = DARK. Theme.Hub is DayNight and follows the system setting. Dark = app palette (accent #FF8A5B). -->
 <resources>
-    <color name="q_bg">#FF141629</color>
-    <color name="q_surface">#FF1B1E38</color>
-    <color name="q_surface_hi">#FF222648</color>
-    <color name="q_outline">#FF30356B</color>
-    <color name="q_text">#FFF4F4FF</color>
-    <color name="q_text_sub">#FFA3A8D6</color>
-    <color name="q_icon">#FFF4F4FF</color>
-    <color name="q_accent">#FFFF8A5B</color>
-    <color name="q_accent_text">#FFFF8A5B</color>
-    <color name="q_accent_container">#FF3A2A3C</color>
+    <color name="q_bg">#FFF6F6FB</color>
+    <color name="q_surface">#FFFFFFFF</color>
+    <color name="q_surface_hi">#FFECEDF7</color>
+    <color name="q_outline">#FFCDD0E6</color>
+    <color name="q_text">#FF1B1D33</color>
+    <color name="q_text_sub">#FF62668A</color>
+    <color name="q_icon">#FF1B1D33</color>
+    <color name="q_accent">#FFE5612F</color>
+    <color name="q_accent_text">#FFB8431A</color>
+    <color name="q_accent_container">#FFFFE3D8</color>
     <color name="q_on_accent">#FF1A1020</color>
-    <color name="q_danger">#FFFF8DA1</color>
-    <color name="q_scrim">#99000000</color>
+    <color name="q_danger">#FFC2334D</color>
+    <color name="q_scrim">#66000000</color>
+
+    <!-- true = dark status/navigation bar icons (for light backgrounds) -->
+    <bool name="q_light_bars">true</bool>
 
     <dimen name="q_pill_radius">28dp</dimen>
     <dimen name="q_card_radius">16dp</dimen>

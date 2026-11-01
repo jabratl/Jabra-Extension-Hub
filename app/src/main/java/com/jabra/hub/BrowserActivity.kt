@@ -1581,7 +1581,7 @@ class BrowserActivity : AppCompatActivity() {
         item(R.drawable.q_ic_refresh, "Reload", null, null, 5)
         item(R.drawable.q_ic_copy, "Copy link", null, null, 10)
         item(R.drawable.q_ic_text_size, "Text size", BrowserStore.textZoom(this).toString() + "%", null, 24)
-        item(R.drawable.q_ic_download, "Save page (PDF / archive)", null, null, 26)
+        item(R.drawable.q_ic_save_page, "Save page (PDF / archive)", null, null, 26)
         divider()
         item(R.drawable.q_ic_globe, "Search engine", BrowserStore.engine(this).name, null, 22)
         item(
@@ -2297,7 +2297,13 @@ class BrowserActivity : AppCompatActivity() {
             emptyList()
         }
         val title = (web.title ?: "").replace('\n', ' ').trim().take(120)
-        val text = (if (title.isNotEmpty()) title + "\n" else "") + list.joinToString("\n") { it.url }
+        // The page address goes along as a normal link: Media Grabber uses a page link in the list as the referer
+        // (needed by sites that answer 403 to a bare media link). Use the page the media was found on.
+        val pageRef = list.map { it.page }.firstOrNull { it.startsWith("http") && !NewTabPage.isNewTab(it) }
+            ?: web.url?.takeIf { it.startsWith("http") && !NewTabPage.isNewTab(it) }
+        val links = list.map { it.url }.toMutableList()
+        if (pageRef != null && pageRef !in links) links.add(pageRef)
+        val text = (if (title.isNotEmpty()) title + "\n" else "") + links.joinToString("\n")
         fun deliver(id: String, name: String, entry: String) {
             try {
                 Floater.save(applicationContext, id, text, "share")

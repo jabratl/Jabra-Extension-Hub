@@ -1,13 +1,25 @@
 <resources>
-    <style name="Theme.Hub" parent="Theme.Material3.Dark.NoActionBar">
-        <item name="colorPrimary">@color/accent</item>
-        <item name="colorOnPrimary">#1A1020</item>
-        <item name="colorSurface">@color/surface</item>
-        <item name="colorOnSurface">@color/text</item>
-        <item name="android:windowBackground">@color/bg</item>
-        <item name="android:statusBarColor">@color/bg</item>
-        <item name="android:navigationBarColor">@color/bg</item>
-        <item name="android:textColorPrimary">@color/text</item>
+    <!-- H7a: DayNight. Colours come from q_tokens (values/ = light, values-night/ = dark). -->
+    <style name="Theme.Hub" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/q_accent</item>
+        <item name="colorOnPrimary">@color/q_on_accent</item>
+        <item name="colorSecondaryContainer">@color/q_accent_container</item>
+        <item name="colorOnSecondaryContainer">@color/q_text</item>
+        <item name="colorSurface">@color/q_surface</item>
+        <item name="colorOnSurface">@color/q_text</item>
+        <item name="colorSurfaceVariant">@color/q_surface_hi</item>
+        <item name="colorOnSurfaceVariant">@color/q_text_sub</item>
+        <item name="colorSurfaceContainer">@color/q_surface</item>
+        <item name="colorSurfaceContainerHigh">@color/q_surface_hi</item>
+        <item name="colorSurfaceContainerHighest">@color/q_surface_hi</item>
+        <item name="colorOutline">@color/q_outline</item>
+        <item name="colorError">@color/q_danger</item>
+        <item name="android:windowBackground">@color/q_bg</item>
+        <item name="android:statusBarColor">@color/q_bg</item>
+        <item name="android:navigationBarColor">@color/q_bg</item>
+        <item name="android:windowLightStatusBar">@bool/q_light_bars</item>
+        <item name="android:windowLightNavigationBar">@bool/q_light_bars</item>
+        <item name="android:textColorPrimary">@color/q_text</item>
     </style>
     <style name="Theme.Hub.Intake" parent="@android:style/Theme.Translucent.NoTitleBar" />
 </resources>
