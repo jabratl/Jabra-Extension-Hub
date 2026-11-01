@@ -63,6 +63,13 @@ object Floater {
 
     fun supports(ctx: Context, id: String) = entryFor(ctx, id) != null
 
+    /**
+     * Plugins that declare  "share": true  in manifest.json can receive a link from the Android Share sheet
+     * ("Jabra Grab", see ShareActivity). Independent of the bubble: no "floater" block is needed.
+     */
+    fun acceptsShare(ctx: Context, id: String): Boolean =
+        manifest(ctx, id)?.optBoolean("share", false) == true
+
     fun enabledIds(ctx: Context): Set<String> {
         val sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         // Before the user changes anything, the bubble keeps its old job: Novel Assistant scan.

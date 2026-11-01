@@ -22,6 +22,7 @@ object JabraApiContract {
         "mediaDownload",
         "mediaPlayer",
         "downloadManager",
+        "shareIntake",
         "apiVersionInfo"
     )
 }

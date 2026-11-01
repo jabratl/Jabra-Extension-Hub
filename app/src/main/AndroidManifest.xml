@@ -84,6 +84,22 @@
             </intent-filter>
         </activity>
 
+        <!-- "Jabra Grab": Share-sheet entry that hands a shared link to a plugin that declares "share": true. -->
+        <activity
+            android:name=".ShareActivity"
+            android:exported="true"
+            android:label="Jabra Grab"
+            android:theme="@style/Theme.Hub.Intake"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity="">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
         <!-- Invisible helper behind a bubble button (reads clipboard, opens the plugin). -->
         <activity
             android:name=".FloaterActivity"
