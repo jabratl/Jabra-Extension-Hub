@@ -50,6 +50,9 @@ class DlJob(val id: Int, val title: String, val kind: String) {
     @Volatile var uri: String = ""
     @Volatile var mime: String = ""
     @Volatile var cancelled: Boolean = false
+    @Volatile var paused: Boolean = false
+    /** Starts the same download again (not saved over a restart, so only set for this run). */
+    @Volatile var retry: (() -> Unit)? = null
     @Volatile var ts: Long = System.currentTimeMillis()
     val active: Boolean get() = state == "queued" || state == "running"
 }
@@ -128,6 +131,11 @@ object DlJobs {
 
     fun all(): List<DlJob> = list.toList()
     fun activeCount(): Int = list.count { it.active }
+    fun remove(j: DlJob) {
+        list.remove(j)
+        save()
+    }
+
     fun clearFinished() {
         list.removeAll { !it.active }
         save()
@@ -169,6 +177,8 @@ class Downloader(private val ctx: Context) {
     fun start(m: Media, ua: String, opts: DlOptions = DlOptions(), onUpdate: (String, Boolean) -> Unit): DlJob {
         val shown = m.title.ifBlank { (Uri.parse(m.url).lastPathSegment ?: m.url) }
         val job = DlJobs.create(shown.take(100), m.kind)
+        val app = ctx.applicationContext
+        job.retry = { Downloader(app).start(m, ua, opts) { _, _ -> } }
         DlJobs.save()
         pool.execute {
             if (job.cancelled) {
@@ -186,6 +196,7 @@ class Downloader(private val ctx: Context) {
                     }
                     val where = if (m.kind == "hls") hls(m, ua, opts, job, up) else direct(m, ua, job, up)
                     job.state = "done"
+                    job.retry = null
                     job.percent = 100
                     job.where = where
                     job.text = "Saved to $where"
@@ -236,9 +247,10 @@ class Downloader(private val ctx: Context) {
                     val buf = ByteArray(64 * 1024)
                     var done = 0L
                     var last = 0L
-                    val t0 = System.currentTimeMillis()
+                    var t0 = System.currentTimeMillis()
                     while (true) {
                         if (job.cancelled) throw CancelledException()
+                        t0 += waitIfPaused(job)
                         val n = i.read(buf)
                         if (n < 0) break
                         o.write(buf, 0, n)
@@ -309,7 +321,7 @@ class Downloader(private val ctx: Context) {
                 var next = 0
                 var done = 0
                 var bytes = 0L
-                val t0 = System.currentTimeMillis()
+                var t0 = System.currentTimeMillis()
                 val list = segs
                 while (next < list.size && window.size < WINDOW) {
                     val s = list[next++]
@@ -317,6 +329,7 @@ class Downloader(private val ctx: Context) {
                 }
                 while (window.isNotEmpty()) {
                     if (job.cancelled) throw CancelledException()
+                    t0 += waitIfPaused(job)
                     val data = try {
                         window.removeFirst().get()
                     } catch (e: ExecutionException) {
@@ -343,6 +356,18 @@ class Downloader(private val ctx: Context) {
             exec.shutdownNow()
         }
         return "Download/JabraHub/$name"
+    }
+
+    /** Holds the download while the user has paused it. Returns how long it waited, so speed stays right. */
+    private fun waitIfPaused(job: DlJob): Long {
+        if (!job.paused) return 0L
+        val from = System.currentTimeMillis()
+        job.text = if (job.percent >= 0) "Paused · ${job.percent}%" else "Paused"
+        while (job.paused) {
+            if (job.cancelled) throw CancelledException()
+            try { Thread.sleep(200) } catch (_: InterruptedException) { throw CancelledException() }
+        }
+        return System.currentTimeMillis() - from
     }
 
     private fun fetchSeg(s: Seg, ua: String, ref: String, keys: ConcurrentHashMap<String, ByteArray>, job: DlJob): ByteArray {
