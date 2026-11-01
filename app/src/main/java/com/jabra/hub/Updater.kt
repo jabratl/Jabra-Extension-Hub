@@ -222,7 +222,7 @@ object Updater {
                     return@Thread
                 }
                 if (silent) {
-                    toast(act, "${items.size} plugin update(s) or new plugin(s) available. Menu > Plugin store.")
+                    toast(act, "${items.size} plugin update(s) or new plugin(s) available. Settings > Plugin updates.")
                     return@Thread
                 }
                 act.runOnUiThread { showEntries(act, store, items, onChanged) }

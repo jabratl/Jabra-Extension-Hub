@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@+id/nav_home" android:icon="@drawable/q_ic_home" android:title="Home" />
+    <item android:id="@+id/nav_plugins" android:icon="@drawable/q_ic_apps" android:title="Plugins" />
+    <item android:id="@+id/nav_downloads" android:icon="@drawable/q_ic_download" android:title="Downloads" />
+    <item android:id="@+id/nav_browser" android:icon="@drawable/q_ic_globe" android:title="Browser" />
+</menu>

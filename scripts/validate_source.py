@@ -67,12 +67,13 @@ for manifest_path in (ROOT / 'app/src/main/assets').rglob('manifest.json'):
 bridge = (ROOT / 'app/src/main/java/com/jabra/hub/PluginActivity.kt').read_text(encoding='utf-8')
 store = (ROOT / 'app/src/main/java/com/jabra/hub/PluginStore.kt').read_text(encoding='utf-8')
 main = (ROOT / 'app/src/main/java/com/jabra/hub/MainActivity.kt').read_text(encoding='utf-8')
+settings = (ROOT / 'app/src/main/java/com/jabra/hub/SettingsActivity.kt').read_text(encoding='utf-8')
 for token, source, label in [
     ('API_VERSION = 1', contract, 'API contract version'),
     ('recordDiagnostic', bridge, 'native diagnostic bridge'),
     ('minJabraApiVersion', store, 'minimum API compatibility validation'),
     ('requiredCapabilities', store, 'required capability validation'),
-    ('showApiContract', main, 'developer API contract screen'),
+    ('showApiContract', settings, 'developer API contract screen'),
     ('APK_FILENAME=Jabra-Extension-Hub-v${VERSION_NAME}-debug.apk', (ROOT / '.github/workflows/android-build.yml').read_text(encoding='utf-8'), 'versioned debug APK artifact'),
     ('JABRA_SIGNING_KEYSTORE_BASE64', (ROOT / '.github/workflows/android-build.yml').read_text(encoding='utf-8'), 'stable signing secret support'),
     ('Generate Jabra release signing key (one-time)', (ROOT / '.github/workflows/generate-signing-key.yml').read_text(encoding='utf-8'), 'one-time signing key workflow'),
@@ -83,7 +84,7 @@ for token, source, label in [
 # H0: no emoji or pictograph symbols in app source. Use vector icons (res/drawable/q_ic_*) or letter tiles.
 # Files listed here still contain some and are cleaned in the named step; delete the entry when it is clean.
 EMOJI = re.compile('[\U0001F000-\U0001FAFF☀-➿⭐■-◿️‍]')
-EMOJI_PENDING = {'Floater.kt': 'H5', 'PluginStore.kt': 'H2', 'MainActivity.kt': 'H1/H2', 'activity_main.xml': 'H1'}
+EMOJI_PENDING = {'Floater.kt': 'H5'}
 for base in (ROOT / 'app/src/main/java', ROOT / 'app/src/main/res'):
     for path in sorted(base.rglob('*')):
         if not path.is_file() or path.suffix not in ('.kt', '.xml') or path.name in EMOJI_PENDING:

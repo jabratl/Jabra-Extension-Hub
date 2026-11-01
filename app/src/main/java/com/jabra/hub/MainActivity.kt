@@ -1,20 +1,28 @@
 package com.jabra.hub
 
 import android.content.Intent
+import android.content.res.ColorStateList
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.text.format.Formatter
 import android.widget.EditText
+import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupMenu
+import android.view.inputmethod.InputMethodManager
 import android.widget.TextView
 import android.widget.Toast
 import java.util.Locale
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.widget.addTextChangedListener
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
 
 class MainActivity : AppCompatActivity() {
@@ -25,6 +33,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var count: TextView
     private lateinit var emptyTitle: TextView
     private lateinit var emptyMsg: TextView
+    private lateinit var homePage: View
+    private lateinit var pluginsPage: View
+    private lateinit var fab: ExtendedFloatingActionButton
+    private lateinit var nav: BottomNavigationView
+    private lateinit var homeCount: TextView
+    private lateinit var backToHome: OnBackPressedCallback
+    private var tab = TAB_HOME
+    private var syncingNav = false
     private var query = ""
     private var showFavoritesOnly = false
     private var categoryFilter = "All categories"
@@ -64,20 +80,62 @@ class MainActivity : AppCompatActivity() {
             query = it?.toString().orEmpty().trim()
             refresh()
         }
-        findViewById<ExtendedFloatingActionButton>(R.id.fab).setOnClickListener {
-            picker.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
+        homePage = findViewById(R.id.home_page)
+        pluginsPage = findViewById(R.id.plugins_page)
+        homeCount = findViewById(R.id.home_count)
+        fab = findViewById(R.id.fab)
+        nav = findViewById(R.id.bottom_navigation)
+        fab.setOnClickListener { pickPluginZip() }
+        findViewById<View>(R.id.app_menu).setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
+        findViewById<View>(R.id.filter_sort).setOnClickListener { anchor -> showFilterSortMenu(anchor) }
+        findViewById<View>(R.id.home_pill).setOnClickListener { showTab(TAB_PLUGINS, focusSearch = true) }
+        findViewById<View>(R.id.home_import).setOnClickListener { pickPluginZip() }
+        findViewById<View>(R.id.home_scan).setOnClickListener {
+            startActivity(Intent(this, IntakeActivity::class.java).setAction(ChapterIntake.ACTION_SCAN_CLIPBOARD))
         }
-        findViewById<TextView>(R.id.app_menu).setOnClickListener { anchor -> showAppMenu(anchor) }
-        findViewById<TextView>(R.id.filter_sort).setOnClickListener { anchor -> showFilterSortMenu(anchor) }
-        findViewById<View>(R.id.nav_dashboard).setOnClickListener {
-            query = ""; findViewById<EditText>(R.id.search).setText(""); showFavoritesOnly = false; categoryFilter = "All categories"; refresh()
+        nav.setOnItemSelectedListener { item ->
+            // Selecting an item from showTab() must not start showTab() again.
+            if (syncingNav) return@setOnItemSelectedListener true
+            when (item.itemId) {
+                R.id.nav_home -> { showTab(TAB_HOME); true }
+                R.id.nav_plugins -> { showTab(TAB_PLUGINS); true }
+                // Downloads and Browser are their own screens, so the selected tab does not move.
+                R.id.nav_downloads -> { startActivity(Intent(this, DownloadsActivity::class.java)); false }
+                R.id.nav_browser -> { startActivity(Intent(this, BrowserActivity::class.java)); false }
+                else -> false
+            }
         }
-        findViewById<View>(R.id.nav_installed).setOnClickListener {
-            findViewById<EditText>(R.id.search).requestFocus(); refresh()
+        backToHome = onBackPressedDispatcher.addCallback(this, false) { showTab(TAB_HOME) }
+        showTab(savedInstanceState?.getInt("tab", TAB_HOME) ?: TAB_HOME)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putInt("tab", tab)
+    }
+
+    private fun pickPluginZip() {
+        picker.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
+    }
+
+    private fun showTab(t: Int, focusSearch: Boolean = false) {
+        tab = t
+        val plugins = t == TAB_PLUGINS
+        homePage.visibility = if (plugins) View.GONE else View.VISIBLE
+        pluginsPage.visibility = if (plugins) View.VISIBLE else View.GONE
+        fab.visibility = if (plugins) View.VISIBLE else View.GONE
+        backToHome.isEnabled = plugins
+        val id = if (plugins) R.id.nav_plugins else R.id.nav_home
+        if (nav.selectedItemId != id) {
+            syncingNav = true
+            nav.selectedItemId = id
+            syncingNav = false
         }
-        findViewById<View>(R.id.nav_import).setOnClickListener { picker.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }
-        findViewById<View>(R.id.nav_activity).setOnClickListener { showDiagnostics() }
-        findViewById<View>(R.id.nav_settings).setOnClickListener { showSettings() }
+        if (plugins && focusSearch) {
+            val search = findViewById<EditText>(R.id.search)
+            search.requestFocus()
+            (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(search, InputMethodManager.SHOW_IMPLICIT)
+        }
     }
 
     override fun onResume() {
@@ -86,141 +144,6 @@ class MainActivity : AppCompatActivity() {
         Updater.autoCheck(this, store) { refresh() }
     }
 
-
-    private fun showAppMenu(anchor: View) {
-        val menu = PopupMenu(this, anchor)
-        menu.menu.add(0, 1, 0, "Storage & data")
-        menu.menu.add(0, 2, 1, "About Jabra Hub")
-        menu.menu.add(0, 3, 2, "Diagnostics & support")
-        menu.menu.add(0, 4, 3, "Developer tools · API contract")
-        menu.menu.add(0, 5, 4, "Scan copied text (clipboard)")
-        menu.menu.add(0, 6, 5, if (BubbleService.isEnabled(this)) "Floating bubble: turn OFF" else "Floating bubble: turn ON")
-        menu.menu.add(0, 7, 6, "Check for app update")
-        menu.menu.add(0, 8, 7, "Plugin store · updates")
-        menu.menu.add(0, 9, 8, "Browser · catch media")
-        menu.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                1 -> showStorage()
-                2 -> {
-                    val version = try {
-                        packageManager.getPackageInfo(packageName, 0).versionName ?: "unknown"
-                    } catch (_: Exception) { "unknown" }
-                    MaterialAlertDialogBuilder(this)
-                        .setTitle("Jabra Extension Hub")
-                        .setMessage("Version $version\n\nA modular Android plugin hub. Import ZIP plugins, search installed tools, view plugin details, and export plugins for backup or transfer.\n\nPlugin code runs in Android WebView. Extensions should feature-detect the Jabra API and use documented fallbacks when a capability is unavailable.")
-                        .setPositiveButton("OK", null).show()
-                }
-                3 -> showDiagnostics()
-                4 -> showApiContract()
-                7 -> Updater.checkApp(this, false)
-                8 -> Updater.checkPlugins(this, store, false) { refresh() }
-                9 -> startActivity(Intent(this, BrowserActivity::class.java))
-                5 -> startActivity(Intent(this, IntakeActivity::class.java).setAction(ChapterIntake.ACTION_SCAN_CLIPBOARD))
-                6 -> {
-                    val on = !BubbleService.isEnabled(this)
-                    if (BubbleService.toggle(this, on)) {
-                        Toast.makeText(this, if (on) "Bubble on. Copy text, then tap J." else "Bubble off.", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(this, "Allow \"Display over other apps\" for Jabra, come back, then turn the bubble on again.", Toast.LENGTH_LONG).show()
-                    }
-                }
-            }
-            true
-        }
-        menu.show()
-    }
-
-
-    private fun showSettings() {
-        val themes = arrayOf("System default", "Dark", "Light")
-        val prefs = getSharedPreferences("hub_settings", MODE_PRIVATE)
-        val current = prefs.getInt("theme_choice", 0).coerceIn(0, 2)
-        MaterialAlertDialogBuilder(this)
-            .setTitle("Settings")
-            .setSingleChoiceItems(themes, current) { dialog, which ->
-                prefs.edit().putInt("theme_choice", which).apply()
-                val msg = when (which) {
-                    1 -> "Dark theme preference saved. Full palette support depends on the installed theme resources."
-                    2 -> "Light theme preference saved. Full palette support depends on the installed theme resources."
-                    else -> "System theme preference saved."
-                }
-                Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
-                dialog.dismiss()
-            }
-            .setNeutralButton("Storage & data") { _, _ -> showStorage() }
-            .setNegativeButton("Close", null)
-            .setPositiveButton("Diagnostics") { _, _ -> showDiagnostics() }
-            .show()
-    }
-
-    private fun showApiContract() {
-        val capabilities = JabraApiContract.capabilities.joinToString("\n• ", prefix = "• ")
-        val message = "Jabra Extension API v${JabraApiContract.API_VERSION}\nHost version: ${packageManager.getPackageInfo(packageName, 0).versionName}\n\nSupported capabilities\n$capabilities\n\nCompatibility rules\n• Declare minJabraApiVersion only when needed.\n• Declare requiredCapabilities for features the plugin cannot work without.\n• Feature-detect optional APIs and handle false/null results.\n• Do not assume Chrome extension APIs, background execution, cloud sync or arbitrary URL downloads.\n• Plugin data is scoped by stable plugin ID; do not change IDs casually.\n\nThis screen describes the host contract. It does not certify a plugin as safe."
-        MaterialAlertDialogBuilder(this)
-            .setTitle("Developer tools · API contract")
-            .setMessage(message)
-            .setPositiveButton("Share contract") { _, _ ->
-                try {
-                    val intent = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_SUBJECT, "Jabra Extension API v${JabraApiContract.API_VERSION}")
-                        putExtra(Intent.EXTRA_TEXT, message)
-                    }
-                    startActivity(Intent.createChooser(intent, "Share API contract"))
-                } catch (e: Exception) { AppDiagnostics.record(this, "Share API contract failed", e) }
-            }
-            .setNegativeButton("Close", null)
-            .show()
-    }
-
-    private fun showDiagnostics() {
-        val report = AppDiagnostics.read(this)
-        MaterialAlertDialogBuilder(this)
-            .setTitle("Diagnostics & support")
-            .setMessage("Recent local app events and errors. This report stays on this device unless you choose to share it.\n\n$report")
-            .setNeutralButton("Share report") { _, _ ->
-                val send = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_SUBJECT, "Jabra Extension Hub diagnostics")
-                    putExtra(Intent.EXTRA_TEXT, "Jabra Extension Hub diagnostics\nVersion: ${packageManager.getPackageInfo(packageName, 0).versionName}\n\n$report")
-                }
-                try { startActivity(Intent.createChooser(send, "Share diagnostics")) }
-                catch (e: Exception) { AppDiagnostics.record(this, "Share diagnostics failed", e) }
-            }
-            .setNegativeButton("Close", null)
-            .setPositiveButton("Clear log") { _, _ ->
-                MaterialAlertDialogBuilder(this)
-                    .setTitle("Clear diagnostics?")
-                    .setMessage("This removes only the local diagnostics log. It does not affect plugins or saved data.")
-                    .setNegativeButton("Cancel", null)
-                    .setPositiveButton("Clear") { _, _ -> AppDiagnostics.clear(this) }
-                    .show()
-            }
-            .show()
-    }
-
-    private fun showStorage() {
-        val pluginBytes = store.totalSize()
-        val dataBytes = store.totalSavedDataSize()
-        val cacheBytes = store.cacheSize()
-        val text = "Installed plugins: ${store.list().size}\nPlugin files: ${Formatter.formatShortFileSize(this, pluginBytes)}\nSaved plugin data: ${Formatter.formatShortFileSize(this, dataBytes)}\nTemporary cache: ${Formatter.formatShortFileSize(this, cacheBytes)}\n\nSaved plugin data is kept separately from plugin ZIP files. Clearing temporary cache does not remove installed plugins or their saved data."
-        MaterialAlertDialogBuilder(this)
-            .setTitle("Storage & data")
-            .setMessage(text)
-            .setNeutralButton("Refresh") { _, _ -> showStorage() }
-            .setNegativeButton("Close", null)
-            .setPositiveButton("Clear cache") { _, _ ->
-                MaterialAlertDialogBuilder(this)
-                    .setTitle("Clear temporary cache?")
-                    .setMessage("Only temporary cache files will be removed. Installed plugins and plugin data will be kept.")
-                    .setNegativeButton("Cancel", null)
-                    .setPositiveButton("Clear") { _, _ ->
-                        val ok = store.clearTemporaryCache()
-                        Toast.makeText(this, if (ok) "Temporary cache cleared" else "Some temporary files could not be removed", Toast.LENGTH_LONG).show()
-                        showStorage()
-                    }.show()
-            }.show()
-    }
 
     private fun exportPlugin(id: String, uri: Uri) {
         Thread {
@@ -253,10 +176,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun showFilterSortMenu(anchor: View) {
         val menu = PopupMenu(this, anchor)
-        menu.menu.add(0, 1, 0, if (showFavoritesOnly) "Show all plugins" else "Show favourites only")
+        menu.menu.add(0, 1, 0, if (showFavoritesOnly) "Show all plugins" else "Show pinned only")
         menu.menu.add(0, 2, 1, "Sort: Name A–Z")
         menu.menu.add(0, 3, 2, "Sort: Name Z–A")
-        menu.menu.add(0, 4, 3, "Sort: Favourites first")
+        menu.menu.add(0, 4, 3, "Sort: Pinned first")
         menu.menu.add(0, 5, 4, "Category: All categories")
         store.list().map { it.category }.distinct().sorted().forEachIndexed { index, category ->
             menu.menu.add(1, 100 + index, 5 + index, "Category: $category")
@@ -295,10 +218,9 @@ class MainActivity : AppCompatActivity() {
             else -> plugins.sortedBy { it.name.lowercase(Locale.ROOT) }
         }
         findViewById<TextView>(R.id.filter_sort).text = buildString {
-            append(if (showFavoritesOnly) "Favourites" else "All plugins")
+            append(if (showFavoritesOnly) "Pinned" else "All plugins")
             if (categoryFilter != "All categories") append(" · ").append(categoryFilter)
-            append(" · ").append(when (sortMode) { "name_desc" -> "Z–A"; "favorites" -> "Favourites first"; else -> "A–Z" })
-            append("  ▾")
+            append(" · ").append(when (sortMode) { "name_desc" -> "Z–A"; "favorites" -> "Pinned first"; else -> "A–Z" })
         }
         list.removeAllViews()
         empty.visibility = if (plugins.isEmpty()) View.VISIBLE else View.GONE
@@ -309,18 +231,83 @@ class MainActivity : AppCompatActivity() {
             emptyTitle.text = "No matches"
             emptyMsg.text = "Try a different search."
         }
+        homeCount.text = when (all.size) { 0 -> "No plugins installed yet"; 1 -> "1 plugin installed"; else -> "${all.size} plugins installed" }
         count.text = if (plugins.size == all.size) "${all.size} installed" else "${plugins.size} of ${all.size} shown"
         for (p in plugins) {
             val v = layoutInflater.inflate(R.layout.item_plugin, list, false)
-            v.findViewById<TextView>(R.id.icon).text = p.icon
+            bindTile(v.findViewById(R.id.icon), v.findViewById(R.id.icon_img), p)
             v.findViewById<TextView>(R.id.name).text = p.name
             val d = v.findViewById<TextView>(R.id.desc)
             d.text = p.description
             d.visibility = if (p.description.isEmpty()) View.GONE else View.VISIBLE
-            v.findViewById<TextView>(R.id.meta).text = "v${p.version} · ${p.category}" + if (favorites.contains(p.id)) " · ★" else ""
+            v.findViewById<TextView>(R.id.meta).text = "v${p.version} · ${p.category}"
+            val pinned = favorites.contains(p.id)
+            val pin = v.findViewById<ImageButton>(R.id.pin)
+            pin.setImageResource(if (pinned) R.drawable.q_ic_star else R.drawable.q_ic_star_outline)
+            pin.imageTintList = ColorStateList.valueOf(Q.color(this, if (pinned) R.color.q_accent else R.color.q_text_sub))
+            pin.contentDescription = (if (pinned) "Unpin " else "Pin ") + p.name
+            pin.setOnClickListener { Q.tick(it); setFavorite(p.id, !pinned) }
             v.setOnClickListener { open(p) }
+            v.setOnLongClickListener { showMenu(v, p); true }
             v.findViewById<View>(R.id.more).setOnClickListener { anchor -> showMenu(anchor, p) }
             list.addView(v)
+        }
+        refreshHome(all, favorites)
+    }
+
+    /** Letter tile (quiet accent colour) or the plugin's own png/webp/jpg icon. */
+    private fun bindTile(letter: TextView, image: ImageView, p: Plugin) {
+        val bmp = store.iconFile(p)?.let { try { BitmapFactory.decodeFile(it.path) } catch (_: Throwable) { null } }
+        if (bmp != null) {
+            image.setImageBitmap(bmp)
+            image.visibility = View.VISIBLE
+            letter.visibility = View.GONE
+        } else {
+            letter.text = tileLetter(p.name)
+            letter.visibility = View.VISIBLE
+            image.visibility = View.GONE
+        }
+    }
+
+    private fun tileLetter(name: String): String {
+        var i = 0
+        while (i < name.length) {
+            val cp = name.codePointAt(i)
+            if (Character.isLetterOrDigit(cp)) return String(Character.toChars(cp)).uppercase(Locale.ROOT)
+            i += Character.charCount(cp)
+        }
+        return "J"
+    }
+
+    private fun refreshHome(all: List<Plugin>, favorites: Set<String>) {
+        val last = store.lastUsedId()?.let { id -> all.firstOrNull { it.id == id } }
+        val cont = findViewById<View>(R.id.home_continue)
+        cont.visibility = if (last == null) View.GONE else View.VISIBLE
+        if (last != null) {
+            bindTile(findViewById(R.id.continue_icon), findViewById(R.id.continue_icon_img), last)
+            findViewById<TextView>(R.id.continue_name).text = last.name
+            cont.contentDescription = "Continue with ${last.name}"
+            cont.setOnClickListener { open(last) }
+        }
+        val pinned = all.filter { favorites.contains(it.id) }
+        findViewById<View>(R.id.home_pins_section).visibility = if (all.isEmpty()) View.GONE else View.VISIBLE
+        findViewById<View>(R.id.home_pins_hint).visibility = if (pinned.isEmpty()) View.VISIBLE else View.GONE
+        val grid = findViewById<LinearLayout>(R.id.home_pins)
+        grid.removeAllViews()
+        val cols = ((resources.configuration.screenWidthDp - 40) / 96).coerceIn(3, 6)
+        for (chunk in pinned.chunked(cols)) {
+            val row = LinearLayout(this)
+            row.orientation = LinearLayout.HORIZONTAL
+            for (p in chunk) {
+                val v = layoutInflater.inflate(R.layout.item_pin, row, false)
+                bindTile(v.findViewById(R.id.icon), v.findViewById(R.id.icon_img), p)
+                v.findViewById<TextView>(R.id.name).text = p.name
+                v.setOnClickListener { open(p) }
+                v.setOnLongClickListener { showMenu(v, p); true }
+                row.addView(v)
+            }
+            repeat(cols - chunk.size) { row.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f)) }
+            grid.addView(row, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         }
     }
 
@@ -330,7 +317,7 @@ class MainActivity : AppCompatActivity() {
         menu.menu.add(0, 2, 1, "Details")
         menu.menu.add(0, 3, 2, "Export ZIP")
         menu.menu.add(0, 4, 3, "Remove")
-        menu.menu.add(0, 5, 4, if (favoriteIds().contains(p.id)) "Remove from favourites" else "Add to favourites")
+        menu.menu.add(0, 5, 4, if (favoriteIds().contains(p.id)) "Unpin from Home" else "Pin to Home")
         if (store.hasRollback(p.id)) {
             menu.menu.add(0, 6, 5, "Rollback to v${store.rollbackVersion(p.id) ?: "previous"}")
         }
@@ -455,5 +442,10 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }.start()
+    }
+
+    private companion object {
+        const val TAB_HOME = 0
+        const val TAB_PLUGINS = 1
     }
 }

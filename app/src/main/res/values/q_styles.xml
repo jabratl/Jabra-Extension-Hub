@@ -18,4 +18,8 @@
         <item name="cornerSizeBottomLeft">0dp</item>
         <item name="cornerSizeBottomRight">0dp</item>
     </style>
+    <!-- H1: bottom navigation active pill uses the accent container instead of the Material default. -->
+    <style name="ThemeOverlay.Q.Nav" parent="">
+        <item name="colorSecondaryContainer">@color/q_accent_container</item>
+    </style>
 </resources>

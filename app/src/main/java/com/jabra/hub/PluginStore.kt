@@ -37,7 +37,7 @@ class PluginStore(private val ctx: Context) {
             name = j.optString("name", dir.name),
             version = j.optString("version", "1.0"),
             description = j.optString("description", ""),
-            icon = j.optString("icon", "🧩").ifEmpty { "🧩" },
+            icon = j.optString("icon", "").trim(),
             entry = j.optString("entry", "index.html"),
             category = normalizeCategory(j.optString("category", "Other")),
             minJabraApiVersion = j.optInt("minJabraApiVersion", 1),
@@ -54,6 +54,28 @@ class PluginStore(private val ctx: Context) {
         val allowed = listOf("Character", "Item", "Skill", "Place", "Organization", "Title", "Other", "Utility", "Writing", "Translation", "Developer")
         return allowed.firstOrNull { it.equals(raw.trim(), ignoreCase = true) } ?: "Other"
     }
+
+    /**
+     * Optional icon image shipped inside the plugin (png, webp or jpg, up to 512 KB).
+     * Anything else in manifest "icon" (an emoji, an svg, a bad path) means: show the letter tile.
+     */
+    fun iconFile(p: Plugin): File? {
+        val rel = p.icon.trim()
+        if (!Regex("[A-Za-z0-9_./-]{1,200}\\.(png|webp|jpe?g)", RegexOption.IGNORE_CASE).matches(rel)) return null
+        if (rel.startsWith("/") || rel.split('/').any { it.isEmpty() || it == "." || it == ".." }) return null
+        val dir = File(root, p.id)
+        val f = File(dir, rel)
+        return try {
+            if (f.isFile && f.length() <= 512 * 1024 && f.canonicalPath.startsWith(dir.canonicalPath + File.separator)) f else null
+        } catch (_: Exception) { null }
+    }
+
+    /** Remember the plugin the user opened last (Home "Continue"). */
+    fun markUsed(id: String) {
+        ctx.getSharedPreferences("hub_recent", Context.MODE_PRIVATE).edit().putString("last_id", id).apply()
+    }
+
+    fun lastUsedId(): String? = ctx.getSharedPreferences("hub_recent", Context.MODE_PRIVATE).getString("last_id", null)
 
     fun sizeOf(id: String): Long =
         File(root, id).walkTopDown().filter { it.isFile }.map { it.length() }.sum()
