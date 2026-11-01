@@ -670,12 +670,9 @@ class PluginActivity : AppCompatActivity() {
 
         /** "light" or "dark": the theme this screen shows now (the user's choice, or the phone's on System). Capability "theme". */
         @JavascriptInterface
-        fun theme(): String = when (ThemeStore.get(ctx)) {
-            ThemeStore.LIGHT -> "light"
-            ThemeStore.DARK -> "dark"
-            else -> if ((ctx.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+        fun theme(): String =
+            if ((ctx.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
                 android.content.res.Configuration.UI_MODE_NIGHT_YES) "dark" else "light"
-        }
 
         /** Append a bounded, local-only diagnostic event from an extension. */
         @JavascriptInterface
@@ -700,7 +697,7 @@ class PluginActivity : AppCompatActivity() {
                 .put("androidApiLevel", Build.VERSION.SDK_INT)
                 .put("pluginId", pluginId)
                 .put("theme", theme())
-                .put("themeMode", ThemeStore.get(ctx))
+                .put("themeMode", "system")
                 .put("apiVersion", JabraApiContract.API_VERSION)
                 .put("minSupportedApiVersion", JabraApiContract.MIN_SUPPORTED_API_VERSION)
                 // Keep the original v1 booleans for plugins written against the earlier contract.
