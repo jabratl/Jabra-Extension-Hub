@@ -1,5 +1,5 @@
 # Handoff: Jabra Hub browser
-Type: MODIFY. Project: Jabra Hub browser. Base: jabra-hub v0.9.7 (zip). versionName must be plain x.y.z (the CI script scripts/validate_source.py rejects suffixes like -t1) and needs README_JABRA_V<version>.txt.
+Type: MODIFY. Project: Jabra Hub browser. Base: jabra-hub v0.9.8 (zip). versionName must be plain x.y.z (the CI script scripts/validate_source.py rejects suffixes like -t1) and needs README_JABRA_V<version>.txt.
 Done: B0, B1 (0.9.6), B2 manager, T0 refactor (build confirmed by user), T1 + T2 browser side. All of B2 + T0 + T1 + T2 ship as 0.9.7 (versionCode 27).
 
 T1/T2 changes:
@@ -17,3 +17,14 @@ USER MUST test (see README_JABRA_V0.9.7.txt). Likely trouble spots if something 
 4. "Open in browser" from a plugin/Hub: onNewIntent only fires when BrowserActivity is the top activity (singleTop). If the browser is behind the plugin, a second browser instance opens. Fix needs PluginActivity.kt (where openBrowser starts the browser): add Intent.FLAG_ACTIVITY_REORDER_TO_FRONT (test on device that onNewIntent fires) or finish the plugin first. Please send PluginActivity.kt.
 Next: T3 (restore tabs after restart: urls, max 8, last active; background tab pause + cap; media chip per tab is already per tab) then R1 (new-tab page with bookmarks grid, search engine choice, address suggestions), R2-R4, F.
 Context line: Project: Jabra Hub browser. Mode: MODIFY. Base 0.9.7 (build confirmed: yes/no). Done: B0-B2, T0, T1, T2 (browser side). Next: T2 plugin side (send PluginActivity.kt) + T3.
+
+
+## 0.9.8 (this zip)
+BUG FIXED (my T1 mistake): PopupMenu.add(group,id,order,title) with a negative order throws IllegalArgumentException ("order does not contain a valid category"), so the 3-dot menu crashed. "Tabs"/"New tab" now use order 0 and are added first (menu keeps insertion order for equal orders). Rule for next time: menu orders must be >= 0.
+T3 (partial): Tab.pending/savedTitle (lazy load on first show, loadPending()), BrowserStore.saveTabs/savedTabs/savedTabCur/clearTabs (JSON in browser_prefs, max 8, http/https only), saveTabs() in onPause (skipped and cleared when Save history is off), restore in onCreate (an "url" extra adds one extra tab), clear browsing data also clears saved tabs, media paused via JS when leaving a tab.
+Not done from T3: memory cap beyond 8 tabs, per-tab restore of back/forward history.
+Checks done: brackets balanced, no negative menu orders left. NOT compiled, NOT run on a device.
+USER MUST test: menu opens; tab restore; Save history off; clear data; link long-press; tab button visible.
+Still open: T2 plugin side (send PluginActivity.kt), tab button colour/position (send activity_browser.xml if wrong).
+Next: R1 new-tab page + search engine + suggestions, then R2-R4, F.
+Context line: Project: Jabra Hub browser. Mode: MODIFY. Base 0.9.8 (build: yes/no, validator: pass/fail). Done: B0-B2, T0-T3, T2 browser side. Next: T2 plugin side (PluginActivity.kt) + R1.

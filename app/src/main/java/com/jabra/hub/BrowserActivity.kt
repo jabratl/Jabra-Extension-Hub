@@ -52,6 +52,9 @@ class BrowserActivity : AppCompatActivity() {
     /** One browser tab: its WebView and the media found on its page. (Hub 0.9.7) */
     internal class Tab(val web: WebView) {
         val found = LinkedHashMap<String, Media>()
+        /** Address restored from the last session; loaded the first time the tab is shown. */
+        var pending: String? = null
+        var savedTitle: String = ""
     }
 
     private val tabs = ArrayList<Tab>()
@@ -167,10 +170,20 @@ class BrowserActivity : AppCompatActivity() {
             }
         }
 
-        val start = intent.getStringExtra("url")
-            ?: BrowserStore.lastUrl(this)
-            ?: "https://duckduckgo.com"
-        web.loadUrl(start)
+        val ext = intent.getStringExtra("url")
+        val saved = BrowserStore.savedTabs(this)
+        if (saved.isEmpty()) {
+            web.loadUrl(ext ?: BrowserStore.lastUrl(this) ?: "https://duckduckgo.com")
+        } else {
+            first.pending = saved[0].first
+            first.savedTitle = saved[0].second
+            for (i in 1 until saved.size) {
+                if (newTab(saved[i].first, show = false, lazyLoad = true)) tabs.last().savedTitle = saved[i].second
+            }
+            val idx = BrowserStore.savedTabCur(this).coerceIn(0, tabs.size - 1)
+            if (idx == 0) loadPending(first) else switchTo(tabs[idx])
+            if (!ext.isNullOrBlank()) newTab(ext)
+        }
     }
 
     /** Everything a tab needs: WebView settings, scripts, and its own clients. */
@@ -370,7 +383,7 @@ class BrowserActivity : AppCompatActivity() {
     }
 
     /** Opens a tab (shown at once unless show = false). Returns false when the tab limit is reached. */
-    private fun newTab(url: String?, show: Boolean = true): Boolean {
+    private fun newTab(url: String?, show: Boolean = true, lazyLoad: Boolean = false): Boolean {
         if (webHost == null) return false
         if (tabs.size >= maxTabs) {
             Toast.makeText(this, "Tab limit ($maxTabs) reached. Close a tab first.", Toast.LENGTH_SHORT).show()
@@ -382,8 +395,16 @@ class BrowserActivity : AppCompatActivity() {
         tabs.add(t)
         setupTab(t)
         if (show) switchTo(t) else updateTabBadge()
-        if (!url.isNullOrBlank()) w.loadUrl(url)
+        if (!url.isNullOrBlank()) {
+            if (lazyLoad) t.pending = url else w.loadUrl(url)
+        }
         return true
+    }
+
+    private fun loadPending(t: Tab) {
+        val u = t.pending ?: return
+        t.pending = null
+        t.web.loadUrl(u)
     }
 
     private fun switchTo(t: Tab) {
@@ -391,13 +412,15 @@ class BrowserActivity : AppCompatActivity() {
         val old = curTab
         if (old === t) return
         if (old != null) {
+            old.web.evaluateJavascript("document.querySelectorAll('video,audio').forEach(function(m){try{m.pause()}catch(e){}})", null)
             old.web.onPause()
             host.removeView(old.web)
         }
         curTab = t
         if (t.web.parent == null) host.addView(t.web, webIdx, webLp)
         t.web.onResume()
-        urlBar.setText(t.web.url ?: "")
+        loadPending(t)
+        urlBar.setText(t.web.url ?: t.pending ?: "")
         progress.visibility = View.GONE
         updateChip()
         if (panel.visibility == View.VISIBLE) showPanel()
@@ -438,9 +461,9 @@ class BrowserActivity : AppCompatActivity() {
                 val row = LinearLayout(this)
                 row.orientation = LinearLayout.HORIZONTAL
                 row.gravity = android.view.Gravity.CENTER_VERTICAL
-                val title = t.web.title?.takeIf { it.isNotBlank() } ?: t.web.url ?: "New tab"
+                val title = t.web.title?.takeIf { it.isNotBlank() } ?: t.savedTitle.takeIf { it.isNotBlank() } ?: t.web.url ?: t.pending ?: "New tab"
                 val label = TextView(this)
-                label.text = (if (t === curTab) "● " else "") + title + "\n" + (Uri.parse(t.web.url ?: "").host ?: "")
+                label.text = (if (t === curTab) "● " else "") + title + "\n" + (Uri.parse(t.web.url ?: t.pending ?: "").host ?: "")
                 label.textSize = 15f
                 label.setPadding(pad, pad, pad, pad)
                 label.setOnClickListener {
@@ -533,8 +556,8 @@ class BrowserActivity : AppCompatActivity() {
         val pageUrl = web.url ?: ""
         val marked = pageUrl.isNotEmpty() && BrowserStore.isBookmarked(this, pageUrl)
         val m = PopupMenu(this, anchor)
-        m.menu.add(0, 20, -2, "Tabs (${tabs.size})")
-        m.menu.add(0, 21, -1, "New tab")
+        m.menu.add(0, 20, 0, "Tabs (${tabs.size})")
+        m.menu.add(0, 21, 0, "New tab")
         m.menu.add(0, 1, 0, if (marked) "★ Remove bookmark" else "☆ Add bookmark")
         m.menu.add(0, 2, 1, "Bookmarks")
         m.menu.add(0, 13, 1, "Bookmarks: export / import")
@@ -912,6 +935,7 @@ class BrowserActivity : AppCompatActivity() {
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Clear") { _, _ ->
                 BrowserStore.clearHistory(this)
+                BrowserStore.clearTabs(this)
                 web.clearCache(true)
                 for (t in tabs) t.web.clearHistory()
                 CookieManager.getInstance().removeAllCookies(null)
@@ -1100,8 +1124,26 @@ class BrowserActivity : AppCompatActivity() {
             .show()
     }
 
+    /** Remembers the open tabs (addresses only) so they come back after the app was closed. Off when "Save history" is off. */
+    private fun saveTabs() {
+        if (!BrowserStore.saveHistory(this)) {
+            BrowserStore.clearTabs(this)
+            return
+        }
+        val items = ArrayList<Pair<String, String>>()
+        var cur = 0
+        for (t in tabs) {
+            val u = t.web.url ?: t.pending ?: continue
+            if (!(u.startsWith("http://") || u.startsWith("https://"))) continue
+            if (t === curTab) cur = items.size
+            items.add(Pair(u, t.web.title?.takeIf { it.isNotBlank() } ?: t.savedTitle))
+        }
+        if (items.isNotEmpty()) BrowserStore.saveTabs(this, items, cur)
+    }
+
     override fun onPause() {
         for (t in tabs) t.web.onPause()
+        saveTabs()
         super.onPause()
     }
 

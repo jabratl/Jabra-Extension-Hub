@@ -208,6 +208,34 @@ object BrowserStore {
         return ImportResult(added, skipped, items.size)
     }
 
+    // ---------- saved tabs (Hub 0.9.8): addresses of the open tabs, restored at the next start ----------
+    private const val TABS = "tabs"
+    private const val MAX_TABS = 8
+
+    fun saveTabs(ctx: Context, items: List<Pair<String, String>>, cur: Int) {
+        val arr = JSONArray()
+        for ((u, t) in items.take(MAX_TABS)) arr.put(JSONObject().put("u", u).put("t", t.take(120)))
+        sp(ctx).edit().putString(TABS, arr.toString()).putInt("tabs_cur", cur).apply()
+    }
+
+    fun savedTabs(ctx: Context): List<Pair<String, String>> {
+        val out = ArrayList<Pair<String, String>>()
+        try {
+            val arr = JSONArray(sp(ctx).getString(TABS, "[]") ?: "[]")
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val u = o.optString("u")
+                if (okUrl(u) && out.size < MAX_TABS) out.add(Pair(u, o.optString("t")))
+            }
+        } catch (_: Exception) {
+        }
+        return out
+    }
+
+    fun savedTabCur(ctx: Context): Int = sp(ctx).getInt("tabs_cur", 0)
+
+    fun clearTabs(ctx: Context) { sp(ctx).edit().remove(TABS).remove("tabs_cur").apply() }
+
     // ---------- manager helpers (Hub 0.9.7): rename, move, delete one, history export ----------
 
     fun bookmarkFolders(ctx: Context): List<String> =
