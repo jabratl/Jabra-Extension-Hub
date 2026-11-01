@@ -12,6 +12,7 @@ import android.os.Bundle
 import android.os.Message
 import android.text.Editable
 import android.text.TextWatcher
+import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
@@ -80,6 +81,12 @@ class BrowserActivity : AppCompatActivity() {
     private lateinit var downloader: Downloader
     private val found: LinkedHashMap<String, Media> get() = curTab!!.found
 
+    // find in page, dark pages (Hub 0.9.10)
+    private var findBar: LinearLayout? = null
+    private var findInput: EditText? = null
+    private var findCount: TextView? = null
+    private var darkPage = false
+
     // address-bar suggestions (Hub 0.9.9)
     private var suggestPopup: ListPopupWindow? = null
     private var suggestItems: List<BrowserEntry> = emptyList()
@@ -137,6 +144,7 @@ class BrowserActivity : AppCompatActivity() {
         downloader = Downloader(applicationContext)
         adblock = BrowserStore.adblock(this)
         desktop = BrowserStore.desktop(this)
+        darkPage = BrowserStore.darkPage(this)
 
         val first = Tab(findViewById(R.id.web))
         tabs.add(first)
@@ -184,6 +192,7 @@ class BrowserActivity : AppCompatActivity() {
 
         onBackPressedDispatcher.addCallback(this) {
             when {
+                findBar != null -> hideFind()
                 suggestPopup?.isShowing == true -> dismissSuggest()
                 customView != null -> exitFullscreen()
                 panel.visibility == View.VISIBLE -> hidePanel()
@@ -217,6 +226,7 @@ class BrowserActivity : AppCompatActivity() {
         t.web.settings.displayZoomControls = false
         if (defaultUa.isEmpty()) defaultUa = t.web.settings.userAgentString
         applyDesktop(t.web)
+        t.web.settings.textZoom = BrowserStore.textZoom(this)
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(t.web, true)
         t.web.addJavascriptInterface(Sniff(t), "JabraSniff")
@@ -339,9 +349,14 @@ class BrowserActivity : AppCompatActivity() {
                 }
             }
 
+            override fun onPageCommitVisible(view: WebView, url: String) {
+                applyDark(view, url)
+            }
+
             override fun onPageFinished(view: WebView, url: String) {
                 // Fallback for WebViews without document-start scripts (the script guards against running twice).
                 view.evaluateJavascript(AdBlock.PAGE_SCRIPT, null)
+                applyDark(view, url)
                 if (!NewTabPage.isNewTab(url)) {
                     BrowserStore.addHistory(this@BrowserActivity, url, view.title ?: "")
                     if (t === curTab) BrowserStore.setLastUrl(this@BrowserActivity, url)
@@ -435,6 +450,7 @@ class BrowserActivity : AppCompatActivity() {
         val host = webHost ?: return
         val old = curTab
         if (old === t) return
+        if (findBar != null) hideFind()
         if (old != null) {
             old.web.evaluateJavascript("document.querySelectorAll('video,audio').forEach(function(m){try{m.pause()}catch(e){}})", null)
             old.web.onPause()
@@ -628,6 +644,208 @@ class BrowserActivity : AppCompatActivity() {
             .show()
     }
 
+    // ---------- page tools (Hub 0.9.10): find in page, text size, dark pages, save page ----------
+
+    private fun showFind() {
+        findInput?.let { it.requestFocus(); showKeyboard(it); return }
+        val dp = resources.displayMetrics.density
+        val bar = LinearLayout(this)
+        bar.orientation = LinearLayout.HORIZONTAL
+        bar.gravity = Gravity.CENTER_VERTICAL
+        bar.setBackgroundColor(0xF2202338.toInt())
+        bar.setPadding((10 * dp).toInt(), (6 * dp).toInt(), (6 * dp).toInt(), (6 * dp).toInt())
+        bar.elevation = 8 * dp
+
+        val input = EditText(this)
+        input.hint = "Find in page"
+        input.setHintTextColor(0xFF9A9DBB.toInt())
+        input.setTextColor(0xFFFFFFFF.toInt())
+        input.isSingleLine = true
+        input.imeOptions = EditorInfo.IME_ACTION_SEARCH
+        input.setBackgroundColor(0x00000000)
+
+        val count = TextView(this)
+        count.setTextColor(0xFF9A9DBB.toInt())
+        count.textSize = 13f
+        count.setPadding((8 * dp).toInt(), 0, (8 * dp).toInt(), 0)
+
+        fun btn(label: String, action: () -> Unit): TextView {
+            val b = TextView(this)
+            b.text = label
+            b.textSize = 18f
+            b.setTextColor(0xFFFFFFFF.toInt())
+            b.gravity = Gravity.CENTER
+            b.minWidth = (40 * dp).toInt()
+            b.setPadding(0, (8 * dp).toInt(), 0, (8 * dp).toInt())
+            b.setOnClickListener { action() }
+            return b
+        }
+
+        input.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) {}
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, c: Int) {
+                val q = s?.toString().orEmpty()
+                if (q.isEmpty()) {
+                    web.clearMatches()
+                    count.text = ""
+                } else {
+                    web.findAllAsync(q)
+                }
+            }
+        })
+        input.setOnEditorActionListener { _, _, _ ->
+            web.findNext(true)
+            true
+        }
+        web.setFindListener { active, total, _ ->
+            count.text = if (input.text.isNullOrEmpty()) "" else if (total == 0) "0" else "${active + 1}/$total"
+        }
+
+        bar.addView(input, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        bar.addView(count)
+        bar.addView(btn("▲") { web.findNext(false) })
+        bar.addView(btn("▼") { web.findNext(true) })
+        bar.addView(btn("✕") { hideFind() })
+
+        val root = findViewById<ViewGroup>(android.R.id.content)
+        root.addView(bar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
+        findBar = bar
+        findInput = input
+        findCount = count
+        input.requestFocus()
+        showKeyboard(input)
+    }
+
+    private fun showKeyboard(v: View) {
+        v.post {
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.showSoftInput(v, InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
+    private fun hideFind() {
+        val bar = findBar ?: return
+        try {
+            web.clearMatches()
+            web.setFindListener(null)
+        } catch (_: Exception) {
+        }
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        findInput?.let { imm.hideSoftInputFromWindow(it.windowToken, 0) }
+        (bar.parent as? ViewGroup)?.removeView(bar)
+        findBar = null
+        findInput = null
+        findCount = null
+    }
+
+    private fun chooseTextSize() {
+        val sizes = intArrayOf(80, 90, 100, 110, 125, 150, 175, 200)
+        val labels = sizes.map { if (it == 100) "100% (normal)" else "$it%" }.toTypedArray()
+        val cur = sizes.indexOf(BrowserStore.textZoom(this)).coerceAtLeast(sizes.indexOf(100))
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Text size")
+            .setSingleChoiceItems(labels, cur) { d, i ->
+                BrowserStore.setTextZoom(this, sizes[i])
+                for (t in tabs) t.web.settings.textZoom = sizes[i]
+                d.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private val darkOnJs = """
+        (function(){try{
+          var s=document.getElementById('jabra-dark');
+          if(!s){s=document.createElement('style');s.id='jabra-dark';(document.head||document.documentElement).appendChild(s);}
+          s.textContent='html{filter:invert(1) hue-rotate(180deg)!important;background:#fff!important}img,picture,video,canvas,iframe,[style*="background-image"]{filter:invert(1) hue-rotate(180deg)!important}';
+        }catch(e){}})();
+    """.trimIndent()
+
+    private val darkOffJs = "(function(){try{var s=document.getElementById('jabra-dark');if(s)s.remove();}catch(e){}})();"
+
+    /** Dark pages: inverts the page colours (images and video are turned back). Skipped on the new-tab page. */
+    private fun applyDark(w: WebView, url: String?) {
+        if (NewTabPage.isNewTab(url)) return
+        w.evaluateJavascript(if (darkPage) darkOnJs else darkOffJs, null)
+    }
+
+    private fun savePage() {
+        if (NewTabPage.isNewTab(web.url) || web.url.isNullOrEmpty()) {
+            Toast.makeText(this, "Open a page first", Toast.LENGTH_SHORT).show()
+            return
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Save page")
+            .setItems(arrayOf("Save as PDF (print dialog)", "Save as web archive (.mht)")) { _, i ->
+                if (i == 0) savePdf() else saveArchive()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun pageFileName(): String =
+        (web.title ?: "page").replace(Regex("[^A-Za-z0-9._ -]"), "_").trim().take(60).ifBlank { "page" }
+
+    /** Android's print dialog: choose "Save as PDF" there. */
+    private fun savePdf() {
+        try {
+            val pm = getSystemService(Context.PRINT_SERVICE) as android.print.PrintManager
+            val name = pageFileName()
+            pm.print(name, web.createPrintDocumentAdapter(name), android.print.PrintAttributes.Builder().build())
+        } catch (e: Exception) {
+            Toast.makeText(this, "Could not start printing: ${e.message ?: "unknown error"}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun saveArchive() {
+        val dir = java.io.File(cacheDir, "shared_exports").apply { mkdirs() }
+        val file = java.io.File(dir, pageFileName() + ".mht")
+        web.saveWebArchive(file.absolutePath, false) { path ->
+            if (path == null) {
+                Toast.makeText(this, "Could not save the page", Toast.LENGTH_LONG).show()
+            } else {
+                finishArchive(java.io.File(path))
+            }
+        }
+    }
+
+    /** Android 10+: copy into Downloads/Jabra Extension Hub. Older Android: open the share sheet. */
+    private fun finishArchive(f: java.io.File) {
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                val values = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, f.name)
+                    put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "multipart/related")
+                    put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Download/Jabra Extension Hub")
+                    put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1)
+                }
+                val uri = contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: throw IllegalStateException("Android could not create the file")
+                try {
+                    contentResolver.openOutputStream(uri, "w")?.use { out -> f.inputStream().use { it.copyTo(out) } }
+                        ?: throw IllegalStateException("Could not write the file")
+                    values.clear()
+                    values.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0)
+                    contentResolver.update(uri, values, null, null)
+                } catch (e: Exception) {
+                    contentResolver.delete(uri, null, null)
+                    throw e
+                }
+                f.delete()
+                Toast.makeText(this, "Saved to Downloads/Jabra Extension Hub/${f.name}", Toast.LENGTH_LONG).show()
+            } else {
+                val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.fileprovider", f)
+                val i = Intent(Intent.ACTION_SEND).setType("multipart/related")
+                    .putExtra(Intent.EXTRA_STREAM, uri)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                startActivity(Intent.createChooser(i, "Save ${f.name}"))
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "Could not save the page: ${e.message ?: "unknown error"}", Toast.LENGTH_LONG).show()
+        }
+    }
+
     private fun goBack() {
         val cur = curTab
         if (web.canGoBack()) web.goBack()
@@ -659,6 +877,13 @@ class BrowserActivity : AppCompatActivity() {
         m.menu.add(0, 13, 1, "Bookmarks: export / import")
         m.menu.add(0, 3, 2, "History")
         m.menu.add(0, 22, 2, "Search engine: " + BrowserStore.engine(this).name)
+        val pt = m.menu.addSubMenu(0, 30, 3, "Page tools")
+        pt.add(0, 23, 0, "Find in page")
+        pt.add(0, 24, 1, "Text size: " + BrowserStore.textZoom(this) + "%")
+        val dp = pt.add(0, 25, 2, "Dark pages")
+        dp.isCheckable = true
+        dp.isChecked = darkPage
+        pt.add(0, 26, 3, "Save page (PDF / archive)")
         m.menu.add(0, 4, 3, "Forward")
         m.menu.add(0, 5, 4, "Reload")
         val ab = m.menu.add(0, 6, 5, "Ad blocker" + if (adblock) " (blocked $blockedCount)" else "")
@@ -713,6 +938,15 @@ class BrowserActivity : AppCompatActivity() {
                 20 -> showTabs()
                 21 -> newTab(NewTabPage.URL)
                 22 -> chooseEngine()
+                23 -> showFind()
+                24 -> chooseTextSize()
+                25 -> {
+                    darkPage = !darkPage
+                    BrowserStore.setDarkPage(this, darkPage)
+                    for (t in tabs) applyDark(t.web, t.web.url)
+                    Toast.makeText(this, if (darkPage) "Dark pages on" else "Dark pages off", Toast.LENGTH_SHORT).show()
+                }
+                26 -> savePage()
                 13 -> showBookmarkTools()
             }
             true
@@ -1241,6 +1475,7 @@ class BrowserActivity : AppCompatActivity() {
 
     override fun onPause() {
         dismissSuggest()
+        if (findBar != null) hideFind()
         for (t in tabs) t.web.onPause()
         saveTabs()
         super.onPause()

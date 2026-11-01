@@ -19,8 +19,8 @@ android {
         applicationId = "com.jabra.hub"
         minSdk = 26
         targetSdk = 34
-        versionCode = 29
-        versionName = "0.9.9"
+        versionCode = 30
+        versionName = "0.9.10"
     }
     signingConfigs {
         if (hasStableSigning) {

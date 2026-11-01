@@ -242,6 +242,12 @@ object BrowserStore {
         return out
     }
 
+    // ---------- page tools (Hub 0.9.10): text size and dark pages ----------
+    fun textZoom(ctx: Context): Int = sp(ctx).getInt("text_zoom", 100).coerceIn(50, 300)
+    fun setTextZoom(ctx: Context, pct: Int) { sp(ctx).edit().putInt("text_zoom", pct.coerceIn(50, 300)).apply() }
+    fun darkPage(ctx: Context) = sp(ctx).getBoolean("dark_page", false)
+    fun setDarkPage(ctx: Context, on: Boolean) { sp(ctx).edit().putBoolean("dark_page", on).apply() }
+
     // ---------- saved tabs (Hub 0.9.8): addresses of the open tabs, restored at the next start ----------
     private const val TABS = "tabs"
     private const val MAX_TABS = 8
