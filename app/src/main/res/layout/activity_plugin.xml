@@ -1,25 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Quiet Pill H3 (0.9.23): REPLACES res/layout/activity_plugin.xml.
+     Ids kept: toolbar progress web error. New: error_msg error_retry error_back.
+     "progress" is now a thin ProgressBar (was LinearProgressIndicator); "error" is now a panel (was a TextView). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/bg"
+    android:background="@color/q_bg"
     android:orientation="vertical">
 
     <com.google.android.material.appbar.MaterialToolbar
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="@color/surface"
-        app:titleTextColor="@color/text" />
+        android:background="@color/q_bg"
+        android:elevation="0dp"
+        app:titleTextColor="@color/q_text" />
 
-    <com.google.android.material.progressindicator.LinearProgressIndicator
+    <!-- Always takes its 3 dp (INVISIBLE, not GONE) so the page does not jump when loading ends. -->
+    <ProgressBar
         android:id="@+id/progress"
+        style="?android:attr/progressBarStyleHorizontal"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:indeterminate="true"
-        app:indicatorColor="@color/accent"
-        app:trackColor="@color/stroke" />
+        android:layout_height="3dp"
+        android:indeterminate="false"
+        android:max="100"
+        android:progressDrawable="@drawable/q_progress"
+        android:visibility="invisible" />
 
     <FrameLayout
         android:layout_width="match_parent"
@@ -31,16 +38,71 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
 
-        <TextView
+        <!-- Error state. clickable so touches do not reach the WebView underneath. -->
+        <LinearLayout
             android:id="@+id/error"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:background="@color/bg"
+            android:background="@color/q_bg"
+            android:clickable="true"
+            android:focusable="true"
             android:gravity="center"
+            android:orientation="vertical"
             android:padding="32dp"
-            android:text="This plugin could not be loaded."
-            android:textColor="@color/subtext"
-            android:textSize="15sp"
-            android:visibility="gone" />
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Couldn't open this plugin"
+                android:textColor="@color/q_text"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/error_msg"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:accessibilityLiveRegion="polite"
+                android:gravity="center"
+                android:maxWidth="360dp"
+                android:text="This plugin could not be loaded."
+                android:textColor="@color/q_text_sub"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/error_retry"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:background="@drawable/q_btn_accent"
+                android:foreground="?attr/selectableItemBackground"
+                android:gravity="center"
+                android:minWidth="180dp"
+                android:minHeight="48dp"
+                android:paddingStart="24dp"
+                android:paddingEnd="24dp"
+                android:text="Try again"
+                android:textColor="@color/q_on_accent"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/error_back"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/q_chip"
+                android:foreground="?attr/selectableItemBackground"
+                android:gravity="center"
+                android:minWidth="180dp"
+                android:minHeight="48dp"
+                android:paddingStart="24dp"
+                android:paddingEnd="24dp"
+                android:text="Back to Hub"
+                android:textColor="@color/q_text"
+                android:textSize="14sp" />
+        </LinearLayout>
     </FrameLayout>
 </LinearLayout>
