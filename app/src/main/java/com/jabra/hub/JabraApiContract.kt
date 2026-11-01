@@ -23,6 +23,9 @@ object JabraApiContract {
         "mediaPlayer",
         "downloadManager",
         "shareIntake",
-        "apiVersionInfo"
+        "apiVersionInfo",
+        "theme",
+        "mediaDownloadOptions",
+        "mediaJobs"
     )
 }

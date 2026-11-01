@@ -547,6 +547,80 @@ class PluginActivity : AppCompatActivity() {
             return true
         }
 
+        /**
+         * Read an HLS stream in the background (qualities + length). The answer comes to the page as
+         * window.__jabraProbe(id, jsonText): {ok, duration, variants:[{label,url}]} or {ok:false, error}.
+         * Capability "mediaDownloadOptions".
+         */
+        @JavascriptInterface
+        fun mediaProbe(url: String, referer: String, id: String): Boolean {
+            val u = url.trim()
+            if (!(u.startsWith("https://") || u.startsWith("http://"))) return false
+            val act = ctx as? PluginActivity ?: return false
+            val ua = android.webkit.WebSettings.getDefaultUserAgent(ctx)
+            val ref = referer.take(2000)
+            val callId = id.filter { it.isLetterOrDigit() || it == '_' || it == '-' }.take(40)
+            Thread {
+                val answer = try {
+                    val p = Downloader(ctx.applicationContext).probe(Media(u, "hls", ref, ""), ua)
+                    val list = org.json.JSONArray()
+                    for (v in p.variants) list.put(JSONObject().put("label", v.label).put("url", v.url))
+                    JSONObject().put("ok", true).put("duration", p.durationSeconds.toDouble()).put("variants", list)
+                } catch (e: Exception) {
+                    JSONObject().put("ok", false).put("error", (e.message ?: "cannot read stream").take(200))
+                }
+                main.post {
+                    if (!act.isFinishing && !act.isDestroyed) {
+                        act.web.evaluateJavascript(
+                            "try{if(window.__jabraProbe)window.__jabraProbe(" + JSONObject.quote(callId) + "," +
+                                JSONObject.quote(answer.toString()) + ")}catch(e){}", null
+                        )
+                    }
+                }
+            }.start()
+            return true
+        }
+
+        /**
+         * mediaDownload with options as JSON: {"variant":"<quality url from mediaProbe>","from":seconds,"to":seconds}.
+         * Same checks as the Browser's stream dialog; false = bad link or bad clip times. Capability "mediaDownloadOptions".
+         */
+        @JavascriptInterface
+        fun mediaDownloadEx(url: String, referer: String, title: String, options: String): Boolean {
+            val u = url.trim()
+            if (!(u.startsWith("https://") || u.startsWith("http://"))) return false
+            val o = try { JSONObject(options) } catch (_: Exception) { JSONObject() }
+            val variant = o.optString("variant", "").trim().takeIf { it.startsWith("https://") || it.startsWith("http://") }
+            val from = o.optDouble("from", 0.0)
+            val to = o.optDouble("to", 0.0)
+            if (from.isNaN() || to.isNaN() || from < 0 || to < 0 || (to > 0 && to <= from)) return false
+            val kind = MediaKind.of(u) ?: "file"
+            val ua = android.webkit.WebSettings.getDefaultUserAgent(ctx)
+            Downloader(ctx.applicationContext).start(Media(u, kind, referer.take(2000), title.take(120)), ua, DlOptions(variant, from, to)) { st, done ->
+                if (done) main.post { Toast.makeText(ctx, st, Toast.LENGTH_LONG).show() }
+            }
+            return true
+        }
+
+        /**
+         * All downloads the Hub knows (this plugin's, the Browser's, others), newest first, max 50, as JSON:
+         * [{id,title,kind,state,text,percent,paused,ts}]. state: queued, running, done, failed, cancelled.
+         * Read-only; no links or file paths are given. Capability "mediaJobs".
+         */
+        @JavascriptInterface
+        fun mediaJobs(): String = try {
+            DlJobs.init(ctx.applicationContext)
+            val arr = org.json.JSONArray()
+            for (j in DlJobs.all().take(50)) {
+                arr.put(
+                    JSONObject().put("id", j.id).put("title", j.title.take(120)).put("kind", j.kind)
+                        .put("state", j.state).put("text", j.text.take(120)).put("percent", j.percent)
+                        .put("paused", j.paused).put("ts", j.ts)
+                )
+            }
+            arr.toString()
+        } catch (_: Exception) { "[]" }
+
         /** Open the Hub's Downloads screen (progress, cancel, play). */
         @JavascriptInterface
         fun openDownloads(): Boolean {
@@ -594,6 +668,15 @@ class PluginActivity : AppCompatActivity() {
         @JavascriptInterface
         fun capabilities(): String = org.json.JSONArray(JabraApiContract.capabilities).toString()
 
+        /** "light" or "dark": the theme this screen shows now (the user's choice, or the phone's on System). Capability "theme". */
+        @JavascriptInterface
+        fun theme(): String = when (ThemeStore.get(ctx)) {
+            ThemeStore.LIGHT -> "light"
+            ThemeStore.DARK -> "dark"
+            else -> if ((ctx.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                android.content.res.Configuration.UI_MODE_NIGHT_YES) "dark" else "light"
+        }
+
         /** Append a bounded, local-only diagnostic event from an extension. */
         @JavascriptInterface
         fun recordDiagnostic(event: String, detail: String): Boolean = try {
@@ -616,6 +699,8 @@ class PluginActivity : AppCompatActivity() {
                 .put("hostPackage", ctx.packageName)
                 .put("androidApiLevel", Build.VERSION.SDK_INT)
                 .put("pluginId", pluginId)
+                .put("theme", theme())
+                .put("themeMode", ThemeStore.get(ctx))
                 .put("apiVersion", JabraApiContract.API_VERSION)
                 .put("minSupportedApiVersion", JabraApiContract.MIN_SUPPORTED_API_VERSION)
                 // Keep the original v1 booleans for plugins written against the earlier contract.

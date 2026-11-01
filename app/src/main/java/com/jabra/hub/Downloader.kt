@@ -37,7 +37,22 @@ data class HlsVariant(val url: String, val bandwidth: Long, val height: Int) {
 data class HlsProbe(val variants: List<HlsVariant>, val durationSeconds: Double)
 
 /** Options for one download. clipTo = 0 means "until the end". */
-data class DlOptions(val variantUrl: String? = null, val clipFrom: Double = 0.0, val clipTo: Double = 0.0)
+data class DlOptions(
+    val variantUrl: String? = null,
+    val clipFrom: Double = 0.0,
+    val clipTo: Double = 0.0,
+    /** Used only when variantUrl is null: the best quality up to this height (0 = best). */
+    val preferHeight: Int = 0
+)
+
+/** The quality for a wanted height: the best one not above it, else the smallest. Unknown heights or 0 = best (first). */
+fun pickVariant(vs: List<HlsVariant>, preferHeight: Int): HlsVariant? {
+    if (vs.isEmpty()) return null
+    if (preferHeight <= 0) return vs[0]
+    val known = vs.filter { it.height > 0 }.sortedWith(compareBy<HlsVariant>({ it.height }, { it.bandwidth }))
+    if (known.isEmpty()) return vs[0]
+    return known.lastOrNull { it.height <= preferHeight } ?: known.first()
+}
 
 class CancelledException : IOException("Cancelled")
 
@@ -237,7 +252,7 @@ class Downloader(private val ctx: Context) {
 
     private fun direct(m: Media, ua: String, job: DlJob, up: (String, Boolean) -> Unit): String {
         val ext = MediaKind.ext(m.url)
-        val name = fileName(m, ext, "")
+        val name = fileName(m, ext, if (m.kind == "subtitle") MediaNaming.subtitleSuffix(m.url) else "")
         val c = http(m.url, ua, m.page)
         val total = c.contentLengthLong
         val out = openOut(name, mimeFor(ext), job)
@@ -285,7 +300,7 @@ class Downloader(private val ctx: Context) {
         if (text.contains("#EXT-X-STREAM-INF")) {
             val vs = variants(url, text)
             if (vs.isEmpty()) throw IOException("No stream found")
-            url = opts.variantUrl ?: vs[0].url
+            url = opts.variantUrl ?: (pickVariant(vs, opts.preferHeight) ?: vs[0]).url
             text = fetchText(url, ua, m.page)
         }
         val p = parse(url, text)
@@ -496,7 +511,8 @@ class Downloader(private val ctx: Context) {
 
     private fun fileName(m: Media, ext: String, suffix: String): String {
         val fromUrl = (Uri.parse(m.url).lastPathSegment ?: "").substringBeforeLast('.')
-        val raw = m.title.ifBlank { fromUrl }.ifBlank { "media" }
+        val lib = if (MediaPrefs.library(ctx)) MediaNaming.libraryTitle(m.title) else null
+        val raw = lib ?: m.title.ifBlank { fromUrl }.ifBlank { "media" }
         val base = raw.replace(Regex("[\\\\/:*?\"<>|\\s]+"), " ").trim().take(80).ifEmpty { "media" }
         return "$base$suffix.$ext"
     }

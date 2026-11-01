@@ -13,6 +13,8 @@ import android.graphics.Outline
 import android.graphics.drawable.InsetDrawable
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.Message
 import android.text.Editable
 import android.text.TextWatcher
@@ -123,6 +125,7 @@ class BrowserActivity : AppCompatActivity() {
     private var panelFilter = "all"
     private var selectMode = false
     private val selected = HashSet<String>()
+    private val MAX_BATCH = 30
 
     // find in page, dark pages (Hub 0.9.10)
     private var findBar: LinearLayout? = null
@@ -1576,6 +1579,7 @@ class BrowserActivity : AppCompatActivity() {
         item(R.drawable.q_ic_history, "History", null, null, 3)
         val active = DlJobs.activeCount()
         item(R.drawable.q_ic_download, "Downloads", if (active > 0) "$active running" else null, null, 12)
+        item(R.drawable.q_ic_tune, "Media settings", null, null, 30)
         divider()
         item(R.drawable.q_ic_back, "Forward", null, null, 4, flip = true)
         item(R.drawable.q_ic_refresh, "Reload", null, null, 5)
@@ -1638,6 +1642,7 @@ class BrowserActivity : AppCompatActivity() {
             }
             11 -> confirmClear()
             12 -> startActivity(Intent(this, DownloadsActivity::class.java))
+            30 -> MediaSettings.show(this)
             20 -> showTabs()
             21 -> newTab(NewTabPage.URL)
             22 -> chooseEngine()
@@ -1983,6 +1988,7 @@ class BrowserActivity : AppCompatActivity() {
     /** Called from a background thread by the WebView. */
     private fun onFound(tab: Tab, url: String, kind: String) {
         runOnUiThread {
+            if (!MediaPrefs.detect(this)) return@runOnUiThread
             if (tab.found.containsKey(url) || tab.found.size >= 200) return@runOnUiThread
             tab.found[url] = Media(url, kind, tab.web.url ?: "", tab.web.title ?: "")
             if (tab === curTab) {
@@ -2167,14 +2173,16 @@ class BrowserActivity : AppCompatActivity() {
             allBtn.setTextColor(Q.color(this, R.color.q_accent_text))
             allBtn.isClickable = true
             val copy = iconBtn(R.drawable.q_ic_copy, "Copy links") { copyLinks(targets()) }
-            val send = chipBtn("Grabber", R.drawable.q_ic_share, true) { sendToGrabber(targets()) }
-            send.setPadding(dp(8), 0, dp(12), 0)
+            val send = iconBtn(R.drawable.q_ic_share, "Send to Media Grabber") { sendToGrabber(targets()) }
+            val dl = chipBtn("Download", R.drawable.q_ic_download, true) { downloadSelected(targets()) }
+            dl.setPadding(dp(8), 0, dp(12), 0)
             fun refresh() {
                 val n = targets().size
                 count.text = if (n == 0) "Select items" else "$n selected"
                 allBtn.text = if (shown.isNotEmpty() && shown.all { it.url in selected }) "None" else "All"
                 copy.alpha = if (n == 0) 0.4f else 1f
                 send.alpha = if (n == 0) 0.4f else 1f
+                dl.alpha = if (n == 0) 0.4f else 1f
             }
             allBtn.setOnClickListener {
                 Q.tick(it)
@@ -2187,7 +2195,8 @@ class BrowserActivity : AppCompatActivity() {
             ctx.addView(count, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             ctx.addView(allBtn)
             ctx.addView(copy, LinearLayout.LayoutParams(dp(48), dp(48)))
-            ctx.addView(send)
+            ctx.addView(send, LinearLayout.LayoutParams(dp(48), dp(48)))
+            ctx.addView(dl)
             panelBar.addView(ctx, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             selectRefresh = { refresh() }
             refresh()
@@ -2271,12 +2280,108 @@ class BrowserActivity : AppCompatActivity() {
         Toast.makeText(this, "${list.size} link(s) copied", Toast.LENGTH_SHORT).show()
     }
 
+    /** Starts a download for every ticked item (HLS: the saved quality, else best; whole stream). Progress: menu > Downloads. */
+    private fun downloadSelected(list: List<Media>) {
+        if (list.isEmpty()) {
+            Toast.makeText(this, "Select items first", Toast.LENGTH_SHORT).show()
+            return
+        }
+        // Videos picked from the found list and no subtitle ticked, but the page has subtitle files: offer them (same name as the video).
+        val subs = found.values.filter { it.kind == "subtitle" && it.url !in list.map { x -> x.url } }
+        val onlyFound = list.all { found.containsKey(it.url) }
+        if (onlyFound && subs.isNotEmpty() && list.any { it.kind == "hls" || it.kind == "video" } && list.none { it.kind == "subtitle" }) {
+            MaterialAlertDialogBuilder(this)
+                .setTitle("Subtitles")
+                .setMessage("This page also has ${subs.size} subtitle file(s). Download them with the video? They get the video's name and the language.")
+                .setPositiveButton("Yes, add") { _, _ -> startBatch(list + subs) }
+                .setNegativeButton("No") { _, _ -> startBatch(list) }
+                .setNeutralButton("Cancel", null)
+                .show()
+        } else startBatch(list)
+    }
+
+    private fun startBatch(list: List<Media>) {
+        val items = list.take(MAX_BATCH)
+        val extra = list.size - items.size
+        fun go() {
+            val ua = web.settings.userAgentString
+            val opts = DlOptions(preferHeight = MediaPrefs.hlsHeight(this))
+            val gap = MediaPrefs.delayMs(this).toLong()
+            val h = Handler(Looper.getMainLooper())
+            items.forEachIndexed { i, m ->
+                if (i == 0 || gap <= 0L) downloader.start(m, ua, opts) { _, _ -> }
+                else h.postDelayed({ downloader.start(m, ua, opts) { _, _ -> } }, gap * i)
+            }
+            selected.clear()
+            selectMode = false
+            showPanel()
+            Toast.makeText(
+                this,
+                "${items.size} added to Downloads (menu > Downloads)" + if (extra > 0) ". $extra more left out (max $MAX_BATCH at once)" else "",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+        if (items.size <= 5) go() else MaterialAlertDialogBuilder(this)
+            .setTitle("Download ${items.size} items?")
+            .setMessage("They are saved to Downloads/JabraHub. Streams: " + MediaPrefs.hlsHeight(this).let { if (it > 0) "up to ${it}p." else "best quality." })
+            .setPositiveButton("Download") { _, _ -> go() }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun mediaActions(m: Media) {
+        val canEp = MediaNaming.patternFromMedia(m.url)?.hashed == false
+        val labels = if (canEp) arrayOf("Copy link", "Send to Media Grabber", "Make episode list…") else arrayOf("Copy link", "Send to Media Grabber")
         MaterialAlertDialogBuilder(this)
             .setTitle((Uri.parse(m.url).lastPathSegment ?: m.url).take(80))
-            .setItems(arrayOf("Copy link", "Send to Media Grabber")) { _, i ->
-                if (i == 0) copyLinks(listOf(m)) else sendToGrabber(listOf(m))
+            .setItems(labels) { _, i ->
+                when (i) {
+                    0 -> copyLinks(listOf(m))
+                    1 -> sendToGrabber(listOf(m))
+                    else -> episodeList(m)
+                }
             }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /**
+     * Episode list from one found link: the episode number in the link is replaced for each number typed (1-12, 1,3,5-8).
+     * Download starts them all (same limits as Select > Download); Send hands the links to Media Grabber. Links are guessed, so some may fail.
+     */
+    private fun episodeList(m: Media) {
+        val p = MediaNaming.patternFromMedia(m.url)
+        if (p == null || p.hashed) {
+            Toast.makeText(this, "No episode number found in this link", Toast.LENGTH_LONG).show()
+            return
+        }
+        val et = EditText(this)
+        et.setText("1-12")
+        et.hint = "1-12"
+        et.setSingleLine(true)
+        et.setSelection(et.text.length)
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val box = FrameLayout(this)
+        box.setPadding(pad, pad / 2, pad, 0)
+        box.addView(et)
+        fun build(): List<Media>? {
+            val nums = MediaNaming.parseNumList(et.text.toString(), 500).take(200)
+            if (nums.isEmpty()) {
+                Toast.makeText(this, "Type episodes, e.g. 1-12", Toast.LENGTH_SHORT).show()
+                return null
+            }
+            val urls = MediaNaming.expandPattern(p.pattern, nums)
+            return urls.indices.map { i ->
+                Media(urls[i], m.kind, m.page, MediaNaming.episodeTitle(m.title, nums[i], MediaPrefs.library(this)))
+            }
+        }
+        val here = if (p.n % 1.0 == 0.0) p.n.toLong().toString() else p.n.toString()
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Episode list")
+            .setMessage("This link is episode $here. Type the episodes to make, e.g. 1-12 or 1,3,5-8. Other links are guessed from this one, so some may not exist.")
+            .setView(box)
+            .setPositiveButton("Download") { _, _ -> build()?.let { downloadSelected(it) } }
+            .setNeutralButton("Send to Grabber") { _, _ -> build()?.let { sendToGrabber(it) } }
             .setNegativeButton("Cancel", null)
             .show()
     }
@@ -2406,8 +2511,15 @@ class BrowserActivity : AppCompatActivity() {
             addOpt("Best  (" + probe.variants[0].label + ")", probe.variants[0].url)
             for (i in 1 until probe.variants.size) addOpt(probe.variants[i].label, probe.variants[i].url)
         }
-        group.check(ids[0])
+        // the quality used last time is ticked (Hub 0.9.38)
+        val want = MediaPrefs.hlsHeight(this)
+        val pre = pickVariant(probe.variants, want)?.let { v -> probe.variants.indexOfFirst { it.url == v.url } } ?: 0
+        group.check(ids[pre.coerceIn(0, ids.size - 1)])
         box.addView(group)
+        val remember = CheckBox(this)
+        remember.text = "Use this quality for next downloads"
+        remember.isChecked = true
+        if (probe.variants.size > 1) box.addView(remember)
 
         val dur = probe.durationSeconds.toInt()
         val hint = TextView(this)
@@ -2442,6 +2554,9 @@ class BrowserActivity : AppCompatActivity() {
                     Toast.makeText(this, "Check the clip times", Toast.LENGTH_LONG).show()
                 } else {
                     val idx = ids.indexOf(group.checkedRadioButtonId).coerceAtLeast(0)
+                    if (probe.variants.size > 1 && remember.isChecked) {
+                        MediaPrefs.setHlsHeight(this, if (idx == 0) 0 else probe.variants[idx].height)
+                    }
                     startDl(m, DlOptions(urls[idx], a, b), btn, status)
                 }
             }
