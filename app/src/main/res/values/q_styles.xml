@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- No parent: works with any theme. Used by MaterialShapeDrawable / bottom sheet in D1-D3. -->
+    <!-- Implicit parent for the dotted names below; AAPT requires it to exist. -->
+    <style name="ShapeAppearance.Q" parent="" />
     <style name="ShapeAppearance.Q.Pill">
         <item name="cornerFamily">rounded</item>
         <item name="cornerSize">@dimen/q_pill_radius</item>
