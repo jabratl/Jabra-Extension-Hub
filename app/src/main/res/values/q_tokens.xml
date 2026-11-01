@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Quiet Pill design tokens (v0.9.13, step D0). Light values. New names only (q_*); br_* untouched. -->
+<resources>
+    <color name="q_bg">#FFFAFAFC</color>
+    <color name="q_surface">#FFFFFFFF</color>
+    <color name="q_surface_hi">#FFF0F1F6</color>
+    <color name="q_outline">#FFD9DBE5</color>
+    <color name="q_text">#FF15161C</color>
+    <color name="q_text_sub">#FF5B5F70</color>
+    <color name="q_icon">#FF2A2C36</color>
+    <color name="q_accent">#FF7C8CFF</color>
+    <color name="q_accent_text">#FF3F4FC9</color>
+    <color name="q_accent_container">#FFE1E4FF</color>
+    <color name="q_on_accent">#FF0E1020</color>
+    <color name="q_danger">#FFB3261E</color>
+    <color name="q_scrim">#66000000</color>
+
+    <dimen name="q_pill_radius">28dp</dimen>
+    <dimen name="q_card_radius">16dp</dimen>
+    <dimen name="q_chip_radius">20dp</dimen>
+    <dimen name="q_grid">8dp</dimen>
+    <dimen name="q_touch">48dp</dimen>
+    <dimen name="q_icon_size">24dp</dimen>
+    <dimen name="q_pill_height">56dp</dimen>
+    <dimen name="q_stroke">1dp</dimen>
+</resources>

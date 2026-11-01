@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Quiet Pill design tokens, dark values. -->
+<resources>
+    <color name="q_bg">#FF101114</color>
+    <color name="q_surface">#FF1A1C22</color>
+    <color name="q_surface_hi">#FF232630</color>
+    <color name="q_outline">#FF2E3240</color>
+    <color name="q_text">#FFECEDF3</color>
+    <color name="q_text_sub">#FFA3A7B8</color>
+    <color name="q_icon">#FFD9DBE6</color>
+    <color name="q_accent">#FF7C8CFF</color>
+    <color name="q_accent_text">#FFB9C2FF</color>
+    <color name="q_accent_container">#FF2B3170</color>
+    <color name="q_on_accent">#FF0E1020</color>
+    <color name="q_danger">#FFFF8A8A</color>
+    <color name="q_scrim">#99000000</color>
+</resources>

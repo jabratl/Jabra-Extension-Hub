@@ -65,3 +65,13 @@ USER MUST test: see README_JABRA_V0.9.12.txt. Trouble spots: (1) user agent swit
 Files the user must replace/keep in the project: Downloader.kt, DownloadsActivity.kt (from this zip), plus all files changed since 0.9.8. PluginActivity.kt patch (openBrowser flags) is in the user's project only.
 Next: F (final): check 360/410 px widths, dark/light, build, device test of everything, changelog; fixes only. Ask the user for build results, crash logs and screenshots of anything that looks wrong (activity_browser.xml / item_media.xml / layouts were never seen).
 Context line: Project: Jabra Hub browser. Mode: MODIFY. Base 0.9.12 (build: yes/no, validator: pass/fail). Done: B0-B2, T0-T3, T2 both sides, R1-R4. Next: F (fixes from the user's device test).
+
+
+## 0.9.13 (this zip) - Quiet Pill design, step D0
+Design plan is in docs/DESIGN_QUIET_PILL.md (user decided: address bar at the BOTTOM). Rules: patch only, new resource names start with q_, never touch br_* without seeing the files.
+Done: D0 = res/values/q_tokens.xml + values-night/q_tokens.xml (colours, dimens), q_styles.xml (ShapeAppearance.Q.Pill/Card/Sheet, no parent), 8 shape drawables (q_pill, q_card, q_chip, q_chip_accent, q_sheet_bg, q_circle_btn, q_circle_btn_on, q_progress), 23 vector icons q_ic_*, Q.kt (dp, isDark, color, icon, tick, pop). Motion is interpolator-based (no dynamicanimation dependency added). No existing Kotlin edited. versionName 0.9.13 / code 33.
+Seen existing names (from code): colors br_bg, br_surface, br_text, br_sub, br_accent; drawables br_chip, br_chip_accent; theme Theme.Hub; layout activity_browser (ids web, url, chip, panel, panelList, progress, back, close, menu, panelClose), item_media (ids mname, msub, mstatus, mbtn, mplay). The res folder was NOT in the zip, activity_browser.xml / item_media.xml / themes.xml / colors.xml never seen.
+Open risk: if Theme.Hub is a fixed dark theme, values-night will not match a light phone setting. Decide in D1 after seeing themes.xml (either force night qualifiers via AppCompatDelegate or put dark values in values/).
+Checks done: XML well-formed (xmllint), Q.kt brackets balanced. No JS in project so node --check not applicable. NOT compiled, NOT run on a device.
+Next: D1 (+D2 if it fits): bottom pill, auto-hide, suggestions above, menu bottom sheet. User must upload activity_browser.xml, item_media.xml, colors.xml, themes.xml, br_chip and br_chip_accent drawables (and the build result of 0.9.13).
+Context line: Project: Jabra Hub browser. Mode: MODIFY. Base 0.9.13 (build: yes/no, validator: pass/fail). Done: B0-B2, T0-T3, R1-R4, D0. Next: D1.

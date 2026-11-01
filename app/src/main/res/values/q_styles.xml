@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- No parent: works with any theme. Used by MaterialShapeDrawable / bottom sheet in D1-D3. -->
+    <style name="ShapeAppearance.Q.Pill">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">@dimen/q_pill_radius</item>
+    </style>
+    <style name="ShapeAppearance.Q.Card">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">@dimen/q_card_radius</item>
+    </style>
+    <style name="ShapeAppearance.Q.Sheet">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSizeTopLeft">@dimen/q_pill_radius</item>
+        <item name="cornerSizeTopRight">@dimen/q_pill_radius</item>
+        <item name="cornerSizeBottomLeft">0dp</item>
+        <item name="cornerSizeBottomRight">0dp</item>
+    </style>
+</resources>
