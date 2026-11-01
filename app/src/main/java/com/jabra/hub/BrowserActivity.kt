@@ -1649,7 +1649,7 @@ class BrowserActivity : AppCompatActivity() {
         val df = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
         val labels = list.map {
             val name = if (it.title.isBlank()) it.url else it.title
-            name + "\n" + (Uri.parse(it.url).host ?: "") + "  ·  " + df.format(Date(it.ts)) + (if (it.folder.isNotBlank()) "  ·  📁 " + it.folder else "")
+            name + "\n" + (Uri.parse(it.url).host ?: "") + "  ·  " + df.format(Date(it.ts)) + (if (it.folder.isNotBlank()) "  ·  " + it.folder else "")
         }.toTypedArray()
         MaterialAlertDialogBuilder(this)
             .setTitle(title)

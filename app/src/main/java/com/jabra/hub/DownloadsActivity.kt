@@ -36,33 +36,33 @@ class DownloadsActivity : AppCompatActivity() {
         DlJobs.init(applicationContext)
         val root = LinearLayout(this)
         root.orientation = LinearLayout.VERTICAL
-        root.setBackgroundColor(getColor(R.color.br_bg))
+        root.setBackgroundColor(getColor(R.color.q_bg))
 
         val bar = LinearLayout(this)
         bar.orientation = LinearLayout.HORIZONTAL
         bar.gravity = Gravity.CENTER_VERTICAL
-        bar.setBackgroundColor(getColor(R.color.br_surface))
+        bar.setBackgroundColor(getColor(R.color.q_surface))
         bar.setPadding(dp(8), dp(8), dp(8), dp(8))
 
         val back = TextView(this)
         back.text = "‹"
         back.textSize = 28f
         back.gravity = Gravity.CENTER
-        back.setTextColor(getColor(R.color.br_text))
+        back.setTextColor(getColor(R.color.q_text))
         back.setOnClickListener { finish() }
         bar.addView(back, LinearLayout.LayoutParams(dp(44), dp(44)))
 
         val title = TextView(this)
         title.text = "Downloads"
         title.textSize = 18f
-        title.setTextColor(getColor(R.color.br_text))
+        title.setTextColor(getColor(R.color.q_text))
         title.setTypeface(title.typeface, android.graphics.Typeface.BOLD)
         bar.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
 
         val clear = TextView(this)
         clear.text = "Clear finished"
         clear.textSize = 13f
-        clear.setTextColor(getColor(R.color.br_accent))
+        clear.setTextColor(getColor(R.color.q_accent))
         clear.setPadding(dp(12), dp(10), dp(12), dp(10))
         clear.setOnClickListener { DlJobs.clearFinished(); render() }
         bar.addView(clear)
@@ -77,7 +77,7 @@ class DownloadsActivity : AppCompatActivity() {
 
         empty = TextView(this)
         empty.text = "No downloads yet.\nFiles are saved to Downloads/JabraHub."
-        empty.setTextColor(getColor(R.color.br_sub))
+        empty.setTextColor(getColor(R.color.q_text_sub))
         empty.gravity = Gravity.CENTER
         empty.setPadding(dp(20), dp(40), dp(20), dp(20))
 
@@ -107,7 +107,7 @@ class DownloadsActivity : AppCompatActivity() {
     private fun row(j: DlJob): View {
         val card = LinearLayout(this)
         card.orientation = LinearLayout.VERTICAL
-        card.setBackgroundResource(R.drawable.br_chip)
+        card.setBackgroundResource(R.drawable.q_chip)
         card.setPadding(dp(14), dp(12), dp(14), dp(12))
         val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         lp.bottomMargin = dp(10)
@@ -115,7 +115,7 @@ class DownloadsActivity : AppCompatActivity() {
 
         val name = TextView(this)
         name.text = "[" + j.kind.uppercase() + "]  " + j.title
-        name.setTextColor(getColor(R.color.br_text))
+        name.setTextColor(getColor(R.color.q_text))
         name.textSize = 14f
         name.maxLines = 2
         card.addView(name)
@@ -127,7 +127,7 @@ class DownloadsActivity : AppCompatActivity() {
             when (j.state) {
                 "done" -> Color.parseColor("#5EEAD4")
                 "failed" -> Color.parseColor("#FF6B6B")
-                else -> getColor(R.color.br_sub)
+                else -> getColor(R.color.q_text_sub)
             }
         )
         st.setPadding(0, dp(4), 0, dp(4))
@@ -137,7 +137,7 @@ class DownloadsActivity : AppCompatActivity() {
             val pb = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal)
             pb.max = 100
             if (j.percent >= 0) pb.progress = j.percent else pb.isIndeterminate = true
-            pb.progressTintList = android.content.res.ColorStateList.valueOf(getColor(R.color.br_accent))
+            pb.progressTintList = android.content.res.ColorStateList.valueOf(getColor(R.color.q_accent))
             card.addView(pb, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(6)))
         }
 
@@ -149,7 +149,7 @@ class DownloadsActivity : AppCompatActivity() {
         }
         if (j.state == "done" && j.uri.isNotEmpty()) {
             if (j.kind == "hls" || j.kind == "video" || j.kind == "audio") {
-                actions.addView(button("▶ Play") {
+                actions.addView(button("Play") {
                     startActivity(Intent(this, PlayerActivity::class.java).putExtra("url", j.uri).putExtra("title", j.title))
                 })
             }
@@ -164,7 +164,7 @@ class DownloadsActivity : AppCompatActivity() {
         b.text = label
         b.textSize = 13f
         b.setTextColor(Color.parseColor("#1A1020"))
-        b.setBackgroundResource(R.drawable.br_chip_accent)
+        b.setBackgroundResource(R.drawable.q_chip_accent)
         b.setPadding(dp(16), dp(8), dp(16), dp(8))
         val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         lp.rightMargin = dp(8)
