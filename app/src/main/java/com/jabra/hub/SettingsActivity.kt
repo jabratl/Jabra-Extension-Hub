@@ -70,6 +70,7 @@ class SettingsActivity : AppCompatActivity() {
             row(card, "Scan copied text", "Send the text you copied to a plugin") {
                 startActivity(Intent(this, IntakeActivity::class.java).setAction(ChapterIntake.ACTION_SCAN_CLIPBOARD))
             }
+            bubbleButtons(card)
         }
         section(body, "Plugins") { card ->
             row(card, "Plugin updates", "Check the plugin store for new and updated plugins") {
@@ -184,6 +185,38 @@ class SettingsActivity : AppCompatActivity() {
         r.addView(sw)
         card.addView(r, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         return sw
+    }
+
+    /** One switch per installed plugin that offers a bubble button (same choice as the plugin's own menu). */
+    private fun bubbleButtons(card: LinearLayout) {
+        val offered = try { store.list().filter { Floater.supports(this, it.id) } } catch (_: Exception) { emptyList() }
+        if (offered.isEmpty()) {
+            row(card, "Bubble buttons", "No installed plugin offers a bubble button yet") { }
+            return
+        }
+        for (p in offered) {
+            val label = Floater.entryFor(this, p.id)?.label ?: p.name
+            addDividerIfNeeded(card)
+            val r = LinearLayout(this)
+            r.orientation = LinearLayout.HORIZONTAL
+            r.gravity = Gravity.CENTER_VERTICAL
+            r.minimumHeight = dp(64)
+            r.setPadding(dp(16), dp(10), dp(16), dp(10))
+            r.setBackgroundResource(selectable())
+            r.addView(textBlock(p.name, "Bubble button: $label"), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            val sw = SwitchCompat(this)
+            sw.contentDescription = "Show ${p.name} in the bubble"
+            sw.isChecked = Floater.isEnabled(this, p.id)
+            sw.setOnCheckedChangeListener { _, on ->
+                Floater.setEnabled(this, p.id, on)
+                if (on && !BubbleService.isEnabled(this)) {
+                    Toast.makeText(this, "Turn on the floating bubble above to see this button.", Toast.LENGTH_LONG).show()
+                }
+            }
+            r.setOnClickListener { sw.toggle() }
+            r.addView(sw)
+            card.addView(r, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
     }
 
     /** Set the switch without running the on/off action. */
