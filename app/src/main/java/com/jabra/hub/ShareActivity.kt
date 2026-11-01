@@ -7,50 +7,68 @@ import android.os.Bundle
 import android.widget.Toast
 
 /**
- * "Jabra Grab": Android Share-sheet entry. Whatever app shares a link (browser, Telegram, ...) lands here;
- * the text is handed to a plugin that declares  "share": true  in its manifest, exactly like a bubble tap
- * (Floater.save -> plugin reads it with JabraAPI.floaterGet(), or gets window.__jabraFloater() when already open).
- * Nothing is downloaded here: the plugin decides what to do with the link.
+ * "Jabra": the one Share-sheet entry (Quiet Pill H5a). It decides where the shared content goes:
+ *  - a file (docx, epub, html, a shared .txt) or text without a link  -> read as a chapter (IntakeActivity)
+ *  - a link and no plugin accepts shared links                         -> read the page as a chapter
+ *  - a link and a plugin declares  "share": true                       -> asks: that plugin, or read as a chapter
+ * Link hand-off is the old "Jabra Grab" flow: Floater.save, then the plugin reads it with JabraAPI.floaterGet()
+ * (or gets window.__jabraFloater() when already open). Nothing is downloaded here.
  */
 class ShareActivity : Activity() {
     private var delivered = false
+    private val urlRe = Regex("https?://\\S+")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val text = sharedText(intent)
-        if (text.isBlank()) {
-            Toast.makeText(this, "Nothing to grab in that share.", Toast.LENGTH_LONG).show()
-            finish()
-            return
-        }
-        val plugins = try {
-            PluginStore(this).list().filter { Floater.acceptsShare(this, it.id) }
-        } catch (e: Exception) {
+        val i = intent
+        if (i == null || i.action != Intent.ACTION_SEND) { finish(); return }
+
+        val text = sharedText(i)
+        val textOnly = i.type == "text/plain" && !i.hasExtra(Intent.EXTRA_STREAM)
+        if (!textOnly || !urlRe.containsMatchIn(text)) { readAsChapter(); return }
+
+        val all = try { PluginStore(this).list() } catch (e: Exception) {
             AppDiagnostics.record(applicationContext, "Share: plugin list failed", e)
             emptyList()
         }
-        when (plugins.size) {
-            0 -> {
-                Toast.makeText(this, "No installed plugin accepts shared links yet. Install or update Media Grabber.", Toast.LENGTH_LONG).show()
-                finish()
+        val grabbers = all.filter { it.id != ChapterIntake.NOVEL_PLUGIN_ID && Floater.acceptsShare(this, it.id) }
+        if (grabbers.isEmpty()) { readAsChapter(); return }
+
+        val novelName = all.firstOrNull { it.id == ChapterIntake.NOVEL_PLUGIN_ID }?.name ?: "Novel Assistant"
+        val labels = grabbers.map { it.name } + "Read as chapter: $novelName"
+        AlertDialog.Builder(this)
+            .setTitle("Send link to")
+            .setItems(labels.toTypedArray()) { _, n ->
+                if (n < grabbers.size) deliver(grabbers[n].id, grabbers[n].name, grabbers[n].entry, text) else readAsChapter()
             }
-            1 -> deliver(plugins[0].id, plugins[0].name, plugins[0].entry, text)
-            else -> AlertDialog.Builder(this)
-                .setTitle("Send link to")
-                .setItems(plugins.map { it.name }.toTypedArray()) { _, i -> deliver(plugins[i].id, plugins[i].name, plugins[i].entry, text) }
-                .setOnCancelListener { finish() }
-                .show()
-        }
+            .setOnCancelListener { finish() }
+            .show()
     }
 
     /** EXTRA_TEXT is what browsers send (often "Page title\nhttps://..."); the plugin extracts the links itself. */
-    private fun sharedText(i: Intent?): String {
-        if (i == null || i.action != Intent.ACTION_SEND) return ""
+    private fun sharedText(i: Intent): String {
         val extra = i.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
         if (!extra.isNullOrBlank()) return extra
         return try {
             i.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString().orEmpty()
         } catch (_: Exception) { "" }
+    }
+
+    /** Passes the same share on to the reader (IntakeActivity) and keeps access to a shared file. */
+    private fun readAsChapter() {
+        if (delivered) return
+        delivered = true
+        try {
+            startActivity(
+                Intent(intent)
+                    .setClass(this, IntakeActivity::class.java)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            )
+        } catch (e: Exception) {
+            AppDiagnostics.record(applicationContext, "Share: could not open the reader", e)
+            Toast.makeText(this, "Could not open Jabra.", Toast.LENGTH_LONG).show()
+        }
+        finish()
     }
 
     private fun deliver(id: String, name: String, entry: String, text: String) {
