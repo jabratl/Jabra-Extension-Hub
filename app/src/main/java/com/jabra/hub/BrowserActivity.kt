@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
+import android.graphics.Outline
 import android.net.Uri
 import android.os.Bundle
 import android.os.Message
@@ -16,8 +17,14 @@ import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.VelocityTracker
+import android.view.ViewConfiguration
+import android.view.ViewOutlineProvider
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.AccelerateInterpolator
+import android.view.animation.DecelerateInterpolator
 import android.view.animation.OvershootInterpolator
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
@@ -71,6 +78,8 @@ class BrowserActivity : AppCompatActivity() {
         /** Site of the page being loaded (for per-site ad blocking and desktop mode). */
         @Volatile var pageHost: String? = null
         var desktopOn: Boolean = false
+        /** Small snapshot for the tab grid (0.9.15); taken when the tab is left or the grid opens. */
+        var thumb: Bitmap? = null
     }
 
     private val tabs = ArrayList<Tab>()
@@ -93,6 +102,8 @@ class BrowserActivity : AppCompatActivity() {
     private var fullUrl = ""
     private var compact = false
     private var compactAnim: ValueAnimator? = null
+    // Tab grid (0.9.15)
+    private var tabsOverlay: FrameLayout? = null
 
     /** The WebView of the current tab. Older code keeps using "web" and "found" unchanged. */
     private val web: WebView get() = curTab!!.web
@@ -231,6 +242,7 @@ class BrowserActivity : AppCompatActivity() {
 
         onBackPressedDispatcher.addCallback(this) {
             when {
+                tabsOverlay != null -> hideTabs()
                 findBar != null -> hideFind()
                 urlBar.hasFocus() || suggestBox.visibility == View.VISIBLE -> blurUrl()
                 customView != null -> exitFullscreen()
@@ -513,7 +525,7 @@ class BrowserActivity : AppCompatActivity() {
         t.web.loadUrl(u)
     }
 
-    private fun switchTo(t: Tab) {
+    private fun switchTo(t: Tab, captureOld: Boolean = true) {
         val host = webHost ?: return
         val old = curTab
         if (old === t) return
@@ -521,6 +533,7 @@ class BrowserActivity : AppCompatActivity() {
         selected.clear()
         selectMode = false
         if (old != null) {
+            if (captureOld) captureThumb(old)
             old.web.evaluateJavascript("document.querySelectorAll('video,audio').forEach(function(m){try{m.pause()}catch(e){}})", null)
             old.web.onPause()
             host.removeView(old.web)
@@ -543,6 +556,7 @@ class BrowserActivity : AppCompatActivity() {
         if (tabs.size == 1) {
             // The last tab is never removed: it goes back to a fresh page.
             t.found.clear()
+            t.thumb = null
             t.web.loadUrl(NewTabPage.URL)
             t.web.clearHistory()
             updateChip()
@@ -550,56 +564,325 @@ class BrowserActivity : AppCompatActivity() {
             return
         }
         val next = tabs[if (i > 0) i - 1 else 1]
-        if (t === curTab) switchTo(next)
+        if (t === curTab) switchTo(next, false)
         tabs.remove(t)
+        t.thumb = null
         (t.web.parent as? ViewGroup)?.removeView(t.web)
         t.web.destroy()
         updateTabBadge()
     }
 
+    // ---------- tab switcher grid (Hub 0.9.15, step D3) ----------
+
+    /** Small snapshot of the tab's page for the grid: RGB_565, 360 px wide, about 0.3 MB per tab (max 8 tabs). */
+    private fun captureThumb(t: Tab) {
+        try {
+            val w = t.web
+            if (w.width <= 0 || w.height <= 0 || t.pending != null) return
+            val bw = 360
+            val bh = (bw * THUMB_RATIO).toInt()
+            val bmp = Bitmap.createBitmap(bw, bh, Bitmap.Config.RGB_565)
+            val c = android.graphics.Canvas(bmp)
+            c.drawColor(Q.color(this, R.color.q_surface))
+            val sc = bw.toFloat() / w.width
+            c.scale(sc, sc)
+            w.draw(c)
+            t.thumb = bmp
+        } catch (_: Throwable) {
+            // No thumbnail is fine: the card shows a placeholder.
+        }
+    }
+
     private fun showTabs() {
-        val dp = resources.displayMetrics.density
-        val pad = (14 * dp).toInt()
-        val box = LinearLayout(this)
-        box.orientation = LinearLayout.VERTICAL
+        if (tabsOverlay != null) return
+        if (findBar != null) hideFind()
+        if (urlBar.hasFocus()) blurUrl()
+        curTab?.let { captureThumb(it) }
+        fun dp(n: Int) = Q.dp(this, n)
+        val root = findViewById<ViewGroup>(android.R.id.content)
+        val ov = FrameLayout(this)
+        ov.setBackgroundColor(Q.color(this, R.color.q_bg))
+        ov.isClickable = true
+
+        val col = LinearLayout(this)
+        col.orientation = LinearLayout.VERTICAL
+
+        // top bar: back, title, count
+        val bar = LinearLayout(this)
+        bar.orientation = LinearLayout.HORIZONTAL
+        bar.gravity = Gravity.CENTER_VERTICAL
+        bar.setPadding(dp(4), dp(4), dp(16), dp(4))
+        val back = ImageView(this)
+        back.setImageDrawable(Q.icon(this, R.drawable.q_ic_back))
+        back.setPadding(dp(12), dp(12), dp(12), dp(12))
+        back.contentDescription = "Close tab switcher"
+        back.isClickable = true
+        back.setOnClickListener { Q.tick(it); hideTabs() }
+        val title = TextView(this)
+        title.text = "Tabs"
+        title.textSize = 20f
+        title.typeface = android.graphics.Typeface.DEFAULT_BOLD
+        title.setTextColor(Q.color(this, R.color.q_text))
+        val count = TextView(this)
+        count.textSize = 14f
+        count.setTextColor(Q.color(this, R.color.q_text_sub))
+        bar.addView(back, LinearLayout.LayoutParams(dp(48), dp(48)))
+        bar.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        bar.addView(count)
+
+        // grid: rows of two cards
         val sv = ScrollView(this)
-        sv.addView(box)
-        var dlg: androidx.appcompat.app.AlertDialog? = null
+        sv.clipToPadding = false
+        sv.setPadding(dp(12), dp(4), dp(12), dp(8))
+        val grid = LinearLayout(this)
+        grid.orientation = LinearLayout.VERTICAL
+        sv.addView(grid, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+        // big "+ New tab" button
+        val newWrap = LinearLayout(this)
+        newWrap.setPadding(dp(16), dp(8), dp(16), dp(16))
+        val newBtn = LinearLayout(this)
+        newBtn.orientation = LinearLayout.HORIZONTAL
+        newBtn.gravity = Gravity.CENTER
+        newBtn.minimumHeight = dp(56)
+        newBtn.setBackgroundResource(R.drawable.q_btn_accent)
+        newBtn.isClickable = true
+        newBtn.isFocusable = true
+        newBtn.contentDescription = "New tab"
+        val plus = ImageView(this)
+        plus.setImageDrawable(Q.icon(this, R.drawable.q_ic_add))
+        plus.imageTintList = ColorStateList.valueOf(Q.color(this, R.color.q_on_accent))
+        val plusTxt = TextView(this)
+        plusTxt.text = "New tab"
+        plusTxt.textSize = 16f
+        plusTxt.typeface = android.graphics.Typeface.DEFAULT_BOLD
+        plusTxt.setTextColor(Q.color(this, R.color.q_on_accent))
+        plusTxt.setPadding(dp(8), 0, 0, 0)
+        newBtn.addView(plus, LinearLayout.LayoutParams(dp(24), dp(24)))
+        newBtn.addView(plusTxt)
+        newBtn.setOnClickListener {
+            Q.pop(it)
+            Q.tick(it)
+            if (newTab(NewTabPage.URL)) hideTabs()
+        }
+        newWrap.addView(newBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+        col.addView(bar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        col.addView(sv, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        col.addView(newWrap, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        ov.addView(col, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+
+        var curRow: View? = null
         fun fill() {
-            box.removeAllViews()
-            for (t in tabs.toList()) {
+            grid.removeAllViews()
+            count.text = "${tabs.size} / $maxTabs"
+            newBtn.alpha = if (tabs.size >= maxTabs) 0.5f else 1f
+            val list = tabs.toList()
+            var i = 0
+            while (i < list.size) {
                 val row = LinearLayout(this)
                 row.orientation = LinearLayout.HORIZONTAL
-                row.gravity = android.view.Gravity.CENTER_VERTICAL
-                val title = t.web.title?.takeIf { it.isNotBlank() } ?: t.savedTitle.takeIf { it.isNotBlank() } ?: t.web.url ?: t.pending ?: "New tab"
-                val label = TextView(this)
-                label.text = (if (t === curTab) "● " else "") + title + "\n" + tabHost(t)
-                label.textSize = 15f
-                label.setPadding(pad, pad, pad, pad)
-                label.setOnClickListener {
-                    dlg?.dismiss()
-                    switchTo(t)
+                for (j in 0..1) {
+                    val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                    lp.setMargins(dp(4), dp(4), dp(4), dp(4))
+                    if (i + j < list.size) {
+                        val t = list[i + j]
+                        if (t === curTab) curRow = row
+                        row.addView(tabCard(t, {
+                            if (t !== curTab) switchTo(t)
+                            hideTabs()
+                        }, {
+                            closeTab(t)
+                            fill()
+                        }), lp)
+                    } else {
+                        row.addView(View(this), lp)
+                    }
                 }
-                val x = TextView(this)
-                x.text = "✕"
-                x.textSize = 18f
-                x.setPadding(pad, pad, pad, pad)
-                x.setOnClickListener {
-                    closeTab(t)
-                    fill()
-                }
-                row.addView(label, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-                row.addView(x)
-                box.addView(row)
+                grid.addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+                i += 2
             }
         }
         fill()
-        dlg = MaterialAlertDialogBuilder(this)
-            .setTitle("Tabs (${tabs.size})")
-            .setView(sv)
-            .setNegativeButton("Close", null)
-            .setPositiveButton("New tab") { _, _ -> newTab(NewTabPage.URL) }
-            .show()
+
+        tabsOverlay = ov
+        root.addView(ov, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        ov.alpha = 0f
+        ov.scaleX = 0.96f
+        ov.scaleY = 0.96f
+        ov.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(200L)
+            .setInterpolator(DecelerateInterpolator()).start()
+        // bring the current tab into view when there are many
+        sv.post { curRow?.let { sv.scrollTo(0, it.top) } }
+    }
+
+    private fun hideTabs() {
+        val ov = tabsOverlay ?: return
+        if (ov.tag == "closing") return
+        ov.tag = "closing"
+        ov.animate().alpha(0f).scaleX(0.96f).scaleY(0.96f).setDuration(160L)
+            .setInterpolator(AccelerateInterpolator())
+            .withEndAction {
+                (ov.parent as? ViewGroup)?.removeView(ov)
+                if (tabsOverlay === ov) tabsOverlay = null
+            }.start()
+    }
+
+    /** One card of the grid: header (title, host, close), thumbnail, swipe left/right to close. */
+    private fun tabCard(t: Tab, onOpen: () -> Unit, onClose: () -> Unit): View {
+        fun dp(n: Int) = Q.dp(this, n)
+        val cur = t === curTab
+        val u = t.web.url ?: t.pending ?: ""
+        val isNew = NewTabPage.isNewTab(u)
+        val host = tabHost(t)
+        val name = if (isNew) "New tab"
+        else t.web.title?.takeIf { it.isNotBlank() }
+            ?: t.savedTitle.takeIf { it.isNotBlank() }
+            ?: host.takeIf { it.isNotBlank() }
+            ?: "New tab"
+
+        val card = LinearLayout(this)
+        card.orientation = LinearLayout.VERTICAL
+        card.setBackgroundResource(if (cur) R.drawable.q_tab_card_on else R.drawable.q_card)
+        val radius = dp(16).toFloat()
+        card.clipToOutline = true
+        card.outlineProvider = object : ViewOutlineProvider() {
+            override fun getOutline(v: View, o: Outline) {
+                o.setRoundRect(0, 0, v.width, v.height, radius)
+            }
+        }
+        card.isClickable = true
+        card.isFocusable = true
+        card.contentDescription = name + (if (host.isNotBlank() && !isNew) ", $host" else "") + (if (cur) ", current tab" else "")
+
+        val head = LinearLayout(this)
+        head.orientation = LinearLayout.HORIZONTAL
+        head.gravity = Gravity.CENTER_VERTICAL
+        head.minimumHeight = dp(48)
+        head.setPadding(dp(12), 0, 0, 0)
+        val texts = LinearLayout(this)
+        texts.orientation = LinearLayout.VERTICAL
+        val tt = TextView(this)
+        tt.text = name
+        tt.textSize = 13f
+        tt.maxLines = 1
+        tt.ellipsize = android.text.TextUtils.TruncateAt.END
+        tt.setTextColor(Q.color(this, R.color.q_text))
+        texts.addView(tt)
+        if (host.isNotBlank() && !isNew) {
+            val hh = TextView(this)
+            hh.text = host
+            hh.textSize = 11f
+            hh.maxLines = 1
+            hh.ellipsize = android.text.TextUtils.TruncateAt.END
+            hh.setTextColor(Q.color(this, R.color.q_text_sub))
+            texts.addView(hh)
+        }
+        val x = ImageView(this)
+        x.setImageDrawable(Q.icon(this, R.drawable.q_ic_close))
+        x.setPadding(dp(12), dp(12), dp(12), dp(12))
+        x.contentDescription = "Close tab: $name"
+        x.isClickable = true
+        x.setOnClickListener {
+            Q.tick(it)
+            onClose()
+        }
+        head.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        head.addView(x, LinearLayout.LayoutParams(dp(48), dp(48)))
+
+        val frame = RatioFrame(this, THUMB_RATIO)
+        frame.setBackgroundColor(Q.color(this, R.color.q_surface))
+        val th = t.thumb
+        if (th != null) {
+            val img = ImageView(this)
+            img.scaleType = ImageView.ScaleType.CENTER_CROP
+            img.setImageBitmap(th)
+            frame.addView(img, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        } else if (isNew) {
+            val ic = ImageView(this)
+            ic.setImageDrawable(Q.icon(this, R.drawable.q_ic_search))
+            ic.imageTintList = ColorStateList.valueOf(Q.color(this, R.color.q_text_sub))
+            frame.addView(ic, FrameLayout.LayoutParams(dp(32), dp(32), Gravity.CENTER))
+        } else {
+            val letter = TextView(this)
+            letter.text = (host.firstOrNull() ?: name.first()).uppercaseChar().toString()
+            letter.textSize = 36f
+            letter.setTextColor(Q.color(this, R.color.q_accent_text))
+            frame.addView(letter, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+        }
+
+        card.addView(head, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        card.addView(frame, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        card.setOnClickListener {
+            Q.tick(it)
+            onOpen()
+        }
+        attachSwipe(card, onClose)
+        return card
+    }
+
+    /** Horizontal drag moves the card; far enough (or a fast fling) closes the tab, otherwise it springs back. */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun attachSwipe(card: View, onDismiss: () -> Unit) {
+        val slop = ViewConfiguration.get(this).scaledTouchSlop
+        var x0 = 0f
+        var y0 = 0f
+        var drag = false
+        var vt: VelocityTracker? = null
+        card.setOnTouchListener { v, e ->
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    x0 = e.rawX
+                    y0 = e.rawY
+                    drag = false
+                    vt?.recycle()
+                    vt = VelocityTracker.obtain()
+                    vt?.addMovement(e)
+                    false
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    vt?.addMovement(e)
+                    val dx = e.rawX - x0
+                    val dy = e.rawY - y0
+                    if (!drag && Math.abs(dx) > slop && Math.abs(dx) > Math.abs(dy)) {
+                        drag = true
+                        v.parent?.requestDisallowInterceptTouchEvent(true)
+                        v.cancelLongPress()
+                        v.isPressed = false
+                    }
+                    if (drag) {
+                        v.translationX = dx
+                        v.alpha = (1f - Math.abs(dx) / (v.width * 1.2f)).coerceIn(0.2f, 1f)
+                    }
+                    drag
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    val wasDrag = drag
+                    drag = false
+                    if (wasDrag) {
+                        vt?.addMovement(e)
+                        vt?.computeCurrentVelocity(1000)
+                        val vx = vt?.xVelocity ?: 0f
+                        val dx = v.translationX
+                        val fling = Math.abs(vx) > 1200f && vx * dx > 0f
+                        if (e.actionMasked == MotionEvent.ACTION_UP && (Math.abs(dx) > v.width * 0.4f || fling)) {
+                            val dir = if (dx > 0f) 1f else -1f
+                            Q.tick(v)
+                            v.animate().translationX(dir * v.width * 1.2f).alpha(0f).setDuration(160L)
+                                .setInterpolator(AccelerateInterpolator())
+                                .withEndAction { onDismiss() }.start()
+                        } else {
+                            v.animate().translationX(0f).alpha(1f).setDuration(260L)
+                                .setInterpolator(OvershootInterpolator(1.5f)).start()
+                        }
+                    }
+                    vt?.recycle()
+                    vt = null
+                    wasDrag
+                }
+                else -> false
+            }
+        }
     }
 
     private fun showLinkMenu(u: String) {
@@ -629,7 +912,10 @@ class BrowserActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         val u = intent.getStringExtra("url")
-        if (!u.isNullOrBlank() && (u.startsWith("http://") || u.startsWith("https://"))) newTab(u)
+        if (!u.isNullOrBlank() && (u.startsWith("http://") || u.startsWith("https://"))) {
+            hideTabs()
+            newTab(u)
+        }
     }
 
     private fun exitFullscreen() {
@@ -2034,5 +2320,18 @@ class BrowserActivity : AppCompatActivity() {
         dismissSuggest()
         for (t in tabs) t.web.destroy()
         super.onDestroy()
+    }
+}
+
+private const val THUMB_RATIO = 1.2f
+
+/** Frame whose height is always [ratio] times its width (tab thumbnails). */
+private class RatioFrame(ctx: Context, private val ratio: Float) : FrameLayout(ctx) {
+    override fun onMeasure(widthSpec: Int, heightSpec: Int) {
+        val width = MeasureSpec.getSize(widthSpec)
+        super.onMeasure(
+            MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec((width * ratio).toInt(), MeasureSpec.EXACTLY)
+        )
     }
 }

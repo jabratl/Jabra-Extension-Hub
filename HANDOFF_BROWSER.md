@@ -87,3 +87,14 @@ Trouble spots to expect: (1) BottomSheetDialog background/drag handle (M3 may ad
 Not done: edge-to-edge (insets), TalkBack pass on the old dialogs, tab grid, new-tab page, media sheet, font-scale test.
 Next: D3 tab switcher grid (BrowserActivity.showTabs + thumbnails, cap 8; Tab gets a thumbnail Bitmap taken when leaving a tab, small size) ; then D4 NewTabPage.kt (in zip), D5 media sheet (item_media.xml in docs/res_seen, panel in activity_browser.xml), D6 polish.
 Context line: Project: Jabra Hub browser. Mode: MODIFY. Base 0.9.14 (build: yes/no, validator: pass/fail). Done: B0-B2, T0-T3, R1-R4, D0, D1, D2. Next: D3.
+
+
+## 0.9.15 (this zip) - Quiet Pill D3
+Done: D3 tab switcher grid. Base 0.9.14 (build result not reported by the user yet). BrowserActivity.kt only (+ 2 drawables q_btn_accent, q_tab_card_on; build.gradle 0.9.15 / code 35).
+How: Tab.thumb (Bitmap RGB_565, 360 px wide, ratio THUMB_RATIO 1.2) via captureThumb(t) = WebView.draw into a scaled Canvas; called in switchTo(t, captureOld=true) before the old WebView is detached, and for curTab when the grid opens; cleared in closeTab. showTabs() builds a full-screen overlay (FrameLayout added to android.R.id.content, field tabsOverlay): top bar (back arrow, "Tabs", "n / 8"), ScrollView with rows of two tabCard()s, bottom accent "New tab" button (dimmed at maxTabs). tabCard(): header (title, host, X 48dp), RatioFrame thumbnail (letter or search icon when no thumbnail), current card outlined q_tab_card_on, rounded via clipToOutline. attachSwipe(): touch listener (drag > slop and horizontal -> translate+fade, release > 40% width or fling > 1200 px/s closes via closeTab + fill(), else spring back; requestDisallowInterceptTouchEvent). hideTabs() fades out, tag "closing" blocks double back. Back callback: tabsOverlay first. onNewIntent hides the grid. closeTab uses switchTo(next, false).
+Checks done: brackets balanced (new block 42/42 braces, 290/290 parens), XML well-formed, all q_* resources used exist. No JS in project (node --check not applicable). NOT compiled, NOT run on a device.
+Trouble spots: blank/black thumbnails (then PixelCopy), swipe vs scroll, small-screen/font-scale layout, bar colours behind the grid (D6).
+Not done: edge-to-edge, thumbnails are not saved across restarts (placeholder letter until visited), Close all, TalkBack custom action for swipe-close (the X has its own label), find-bar colours, media sheet, new-tab page restyle, light mode.
+Next: D4 NewTabPage.kt restyle (in zip): big search pill, bookmark tiles with favicons, less clutter (dark only unless asked). Then D5 media sheet (item_media.xml in docs/res_seen), D6 polish.
+Context line: Project: Jabra Hub browser. Mode: MODIFY. Base 0.9.15 (build: yes/no, validator: pass/fail). Done: B0-B2, T0-T3, R1-R4, D0, D1, D2, D3. Next: D4.
+
