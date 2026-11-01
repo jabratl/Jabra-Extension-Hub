@@ -1,0 +1,706 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Media Grabber</title>
+<style>
+:root{
+  --bg:#141629;--card:#1c1f3a;--card2:#242850;--line:#2f3466;--text:#eef0ff;--sub:#9aa0cf;
+  --accent:#E85D9A;--accent2:#7c5cff;--ok:#3ddc97;--warn:#ffb454;--bad:#ff6b6b;
+  --hls:#a78bfa;--video:#38bdf8;--audio:#fbbf24;--sub-c:#34d399;--page:#94a3b8;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+body{padding:0 14px 92px;max-width:720px;margin:0 auto}
+h1{font-size:20px;margin:16px 0 2px}
+.lead{color:var(--sub);font-size:13px;margin:0 0 14px}
+.tabs{position:fixed;left:0;right:0;bottom:0;display:flex;background:#0f1122;border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom);z-index:5}
+.tabs button{flex:1;background:none;border:0;color:var(--sub);padding:10px 4px 9px;font:600 12px system-ui;display:flex;flex-direction:column;align-items:center;gap:2px;min-height:52px}
+.tabs button .ic{font-size:19px;line-height:1}
+.tabs button.on{color:var(--accent)}
+.tab{display:none}.tab.on{display:block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:12px}
+label{display:block;font-size:12px;color:var(--sub);margin:10px 0 4px;font-weight:600;letter-spacing:.02em}
+textarea,input[type=text],input[type=url],input:not([type]){width:100%;background:#10132b;border:1px solid var(--line);border-radius:12px;color:var(--text);padding:11px 12px;font:14px system-ui;outline:none}
+textarea{min-height:104px;resize:vertical;font:13px ui-monospace,Menlo,monospace}
+textarea:focus,input:focus{border-color:var(--accent)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.row>*{flex:1}
+.btn{border:0;border-radius:12px;padding:11px 14px;font:700 14px system-ui;color:#fff;background:var(--card2);min-height:44px;cursor:pointer;flex:0 0 auto}
+.btn.main{background:linear-gradient(135deg,var(--accent),var(--accent2));width:100%;flex:1 1 100%}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--sub)}
+.btn.sm{min-height:36px;padding:7px 11px;font-size:13px}
+.btn:disabled{opacity:.4}
+.btn:active{transform:scale(.97)}
+.item{display:flex;gap:10px;align-items:center;background:var(--card2);border-radius:12px;padding:10px;margin-top:8px}
+.item input[type=checkbox]{width:20px;height:20px;accent-color:var(--accent);flex:0 0 auto}
+.item .meta{flex:1;min-width:0}
+.item .nm{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .hs{font-size:12px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .hint{font-size:12px;color:var(--warn);margin-top:2px}
+.badge{font:800 10px system-ui;letter-spacing:.05em;border-radius:7px;padding:3px 7px;color:#10132b;flex:0 0 auto}
+.k-hls{background:var(--hls)}.k-video{background:var(--video)}.k-audio{background:var(--audio)}.k-subtitle{background:var(--sub-c)}.k-page{background:var(--page)}.k-file{background:var(--page)}
+.banner{border-radius:12px;padding:10px 12px;font-size:13px;margin-bottom:12px;background:#2a1f3d;border:1px solid var(--accent)}
+.banner b{color:var(--accent)}
+.empty{color:var(--sub);text-align:center;padding:18px 8px;font-size:13px}
+.note{font-size:12px;color:var(--sub);margin:8px 2px 0}
+.sites{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-top:10px}
+.site{background:var(--card2);border-radius:12px;padding:10px;display:flex;align-items:center;gap:8px;min-height:44px}
+.site .fav{width:26px;height:26px;border-radius:8px;background:var(--accent2);display:grid;place-items:center;font-weight:800;font-size:13px;flex:0 0 auto;cursor:pointer}
+.site .st{flex:1;min-width:0;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.site .x{background:none;border:0;color:var(--sub);font-size:16px;padding:4px}
+.switch{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0}
+.switch span{font-size:14px}.switch small{display:block;color:var(--sub);font-size:12px}
+.switch input{width:44px;height:24px;accent-color:var(--accent);flex:0 0 auto}
+.toast{position:fixed;left:50%;bottom:74px;transform:translateX(-50%);background:#000c;border:1px solid var(--line);color:#fff;padding:9px 14px;border-radius:999px;font-size:13px;z-index:9;opacity:0;pointer-events:none;transition:opacity .2s;max-width:90vw;text-align:center}
+.toast.on{opacity:1}
+.h-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.pill{font-size:12px;color:var(--sub)}
+details summary{cursor:pointer;color:var(--sub);font-size:13px;font-weight:600;padding:6px 0}
+ul.tips{margin:6px 0 0 18px;padding:0;color:var(--sub);font-size:13px}
+ul.tips li{margin:3px 0}
+</style>
+</head>
+<body>
+
+<h1>🎬 Media Grabber</h1>
+<p class="lead">Download videos, HLS streams, audio and subtitles to <b>Downloads/JabraHub</b>.</p>
+
+<div id="missing" class="banner" style="display:none"></div>
+
+<!-- GRAB -->
+<section class="tab on" id="t-grab">
+  <div id="floaterBanner" class="banner" style="display:none"></div>
+  <div class="card">
+    <label for="links" style="margin-top:0">Paste links (one or many)</label>
+    <textarea id="links" placeholder="https://site.com/video.mp4&#10;https://cdn.site.com/stream/master.m3u8&#10;https://site.com/subs/en.vtt" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>
+    <div class="row" style="margin-top:8px">
+      <button class="btn sm" id="bPaste">📋 Paste</button>
+      <button class="btn sm ghost" id="bClear">Clear</button>
+    </div>
+    <details style="margin-top:6px" id="opts">
+      <summary>Name &amp; referer (optional)</summary>
+      <label for="title">File name</label>
+      <input id="title" type="text" placeholder="Leave empty to use the file name from the link">
+      <label for="referer">Page link (referer)</label>
+      <input id="referer" type="url" placeholder="https://site.com/watch/123  — needed by some sites">
+      <p class="note">Several links with one name get numbered: “Name 01”, “Name 02”… If you paste a normal page link together with media links, it is used as the referer automatically.</p>
+    </details>
+  </div>
+
+  <details class="card" id="batchCard">
+    <summary>Episode batch — make 1–12 from one link</summary>
+    <label for="bUrl">One episode link (with the episode number in it)</label>
+    <input id="bUrl" type="url" placeholder="Empty = first link from the box above" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <label for="bRange">Episodes</label>
+    <input id="bRange" type="text" placeholder="1-12, 15, 20-30" autocapitalize="off" spellcheck="false">
+    <div class="row" style="margin-top:8px"><button class="btn sm" id="bMake">Make list</button></div>
+    <p class="note" id="bInfo">The number in the link is replaced for every episode and the links are added to the box above. Works when the site numbers its links (…/episode-5, …/ep05.m3u8).</p>
+  </details>
+
+  <div class="card" id="listCard" style="display:none">
+    <div class="h-top">
+      <b id="listTitle">Found links</b>
+      <span class="pill"><label style="display:inline;margin:0"><input type="checkbox" id="selAll" checked style="width:auto"> all</label></span>
+    </div>
+    <div class="row" style="margin-top:6px;gap:6px">
+      <button class="btn sm ghost" data-sel="media">Media</button>
+      <button class="btn sm ghost" data-sel="video">Video</button>
+      <button class="btn sm ghost" data-sel="hls">HLS</button>
+      <button class="btn sm ghost" data-sel="subtitle">Subs</button>
+      <button class="btn sm ghost" id="bSort" title="Sort 1, 2, 10 in natural order">Sort 1→10</button>
+      <button class="btn sm ghost" id="bCopySel" title="Copy the selected links">⧉ Copy</button>
+    </div>
+    <div id="list"></div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn main" id="bGo">⬇ Download</button>
+    </div>
+  </div>
+
+  <div class="card" id="emptyCard">
+    <div class="empty">Paste a link above. Direct video / audio / subtitle files and <b>.m3u8</b> streams download here. For a normal web page, use <b>Browser</b> — it catches the media while you play it.</div>
+  </div>
+
+  <details class="card">
+    <summary>What works / what doesn't</summary>
+    <ul class="tips">
+      <li>Works: mp4, webm, mkv, mov, mp3, m4a, aac, ogg, wav, vtt, srt and unencrypted HLS (.m3u8).</li>
+      <li>HLS is saved as one .ts file (.mp4 for fMP4 streams). The best quality is picked. Hub 0.9.4+ downloads parts in parallel and decrypts AES-128 streams.</li>
+      <li>DRM and SAMPLE-AES streams are refused by the Hub. Use the Browser tab when you want to pick quality or download only a clip.</li>
+      <li>Progress, cancel and play are on the Hub's Downloads screen (History tab > Downloads screen).</li>
+      <li>If a link says “403” or “HTTP 4xx”, add the page link as referer.</li>
+    </ul>
+  </details>
+</section>
+
+<!-- BROWSER -->
+<section class="tab" id="t-browser">
+  <div class="card">
+    <label for="url" style="margin-top:0">Open a site in the Hub browser</label>
+    <div class="row">
+      <input id="url" type="text" placeholder="Address or search words" autocapitalize="off" autocorrect="off" spellcheck="false" style="flex:1 1 60%">
+      <button class="btn" id="bOpen" style="flex:0 0 auto">Go</button>
+    </div>
+    <p class="note">Play the video on the page — Jabra lists every video, stream, audio and subtitle file it sees under the <b>🎬 found</b> button. Tap Download there.</p>
+  </div>
+  <div class="card">
+    <div class="h-top"><b>Quick sites</b><button class="btn sm ghost" id="bAddSite">＋ Add</button></div>
+    <div class="sites" id="sites"></div>
+    <div class="empty" id="noSites" style="display:none">No saved sites yet. Type an address above and tap “＋ Add” to keep it here.</div>
+  </div>
+</section>
+
+<!-- HISTORY -->
+<section class="tab" id="t-hist">
+  <div class="card">
+    <div class="h-top"><b>Started downloads</b><span><button class="btn sm" id="bDls">⬇ Downloads screen</button> <button class="btn sm ghost" id="bClearH">Clear</button></span></div>
+    <div id="hist"></div>
+    <div class="empty" id="noHist">Nothing yet.</div>
+    <p class="note">Downloads started from the Browser's found-list are not listed here. Files are in Downloads/JabraHub.</p>
+  </div>
+</section>
+
+<!-- SETTINGS -->
+<section class="tab" id="t-set">
+  <div class="card">
+    <div class="switch"><span>Start automatically from the bubble<small>When you copy a media link and tap the 🎬 bubble, download right away</small></span><input type="checkbox" id="sAuto"></div>
+    <div class="switch"><span>Open page links in browser<small>If a copied link is a normal web page, open it in the Hub browser</small></span><input type="checkbox" id="sPage" checked></div>
+    <div class="switch"><span>Keep history<small>Remember links started from this screen</small></span><input type="checkbox" id="sHist" checked></div>
+  </div>
+  <div class="card">
+    <div class="switch"><span>Library naming (Plex / Jellyfin / Emby / Kodi)<small>With a File name set, files are named “Show - S01E05” (season from “Season 2” / “S02”; the episode number comes from each link, or counts 1, 2, 3…). Off = names as before.</small></span><input type="checkbox" id="sLib"></div>
+    <div class="switch"><span>Pause between downloads<small>Longer pause helps sites that block many quick requests</small></span>
+      <select id="sDelay" style="background:var(--card2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:8px"><option value="180">Short</option><option value="1000">1 s</option><option value="3000">3 s</option></select></div>
+  </div>
+  <div class="card">
+    <b>Share from other apps</b>
+    <p class="note" style="margin-top:6px">In any browser or app tap <b>Share → Jabra Grab</b>. The link lands here, ready to check and download. A normal web page opens in the Hub browser so it can catch the media while you play it.</p>
+    <p class="note" id="shareState"></p>
+  </div>
+  <div class="card">
+    <b>Floating bubble</b>
+    <p class="note" style="margin-top:6px">Copy a link anywhere, tap the bubble, and Media Grabber opens with the link ready.</p>
+    <div class="row" style="margin-top:8px">
+      <button class="btn" id="bBubble">Show in bubble</button>
+      <span class="pill" id="bubbleState"></span>
+    </div>
+  </div>
+  <div class="card">
+    <b>About</b>
+    <p class="note" style="margin-top:6px" id="about"></p>
+  </div>
+</section>
+
+<nav class="tabs">
+  <button data-t="grab" class="on"><span class="ic">⬇</span>Grab</button>
+  <button data-t="browser"><span class="ic">🌐</span>Browser</button>
+  <button data-t="hist"><span class="ic">🕘</span>History</button>
+  <button data-t="set"><span class="ic">⚙</span>Settings</button>
+</nav>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+"use strict";
+var J = window.JabraAPI || null;
+var $ = function(id){return document.getElementById(id)};
+
+/* ---------- storage (Hub storage first, localStorage fallback) ---------- */
+function sget(k, d){
+  try{
+    var v = (J && J.storageGet) ? J.storageGet("mg:"+k) : localStorage.getItem("mg:"+k);
+    return v==null ? d : JSON.parse(v);
+  }catch(e){return d}
+}
+function sset(k, v){
+  try{
+    var s = JSON.stringify(v);
+    if(J && J.storageSet) J.storageSet("mg:"+k, s); else localStorage.setItem("mg:"+k, s);
+  }catch(e){}
+}
+
+/* ---------- helpers ---------- */
+function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
+var tt;
+function toast(m){
+  var t=$("toast"); t.textContent=m; t.classList.add("on");
+  clearTimeout(tt); tt=setTimeout(function(){t.classList.remove("on")},2400);
+}
+function caps(){ try{ return J && J.capabilities ? JSON.parse(J.capabilities()) : [] }catch(e){return []} }
+var CAPS = caps();
+function has(c){ return CAPS.indexOf(c)>=0 }
+
+/* Same rules as the Hub's own detector (by file extension in the URL path). */
+var EXT = {
+  hls:["m3u8"], video:["mp4","webm","mkv","mov"], audio:["mp3","m4a","aac","ogg","wav"], subtitle:["vtt","srt"]
+};
+var LABEL = {hls:"HLS",video:"VIDEO",audio:"AUDIO",subtitle:"SUBS",page:"PAGE",file:"FILE"};
+function kindOf(u){
+  var p; try{ p = new URL(u).pathname.toLowerCase() }catch(e){ return "page" }
+  var ext = p.indexOf(".")>=0 ? p.split(".").pop() : "";
+  for(var k in EXT){ if(EXT[k].indexOf(ext)>=0) return k }
+  return "page";
+}
+function extractUrls(text){
+  var m = String(text||"").match(/https?:\/\/[^\s"'<>\\]+/gi) || [];
+  var seen = {}, out = [];
+  m.forEach(function(u){
+    u = u.replace(/[)\],.;:!?]+$/,"");
+    if(!seen[u]){seen[u]=1; out.push(u)}
+  });
+  return out;
+}
+function hostOf(u){ try{return new URL(u).host}catch(e){return ""} }
+function nameOf(u){
+  try{
+    var s = new URL(u).pathname.split("/").filter(Boolean).pop() || hostOf(u);
+    return decodeURIComponent(s);
+  }catch(e){return u}
+}
+function hint(u,k){
+  if(k!=="page") return "";
+  if(/m3u8|\.mp4|\.mp3|\.webm/i.test(u.split("?").slice(1).join("?"))) return "Media link is hidden inside the address — better open the page in Browser.";
+  return "Looks like a web page. Open it in Browser to catch the media.";
+}
+
+/* ---------- ported verbatim from Media Grabber extension V77 (shared.js) ---------- */
+function sanitize(name, max = 100) {
+  return (name || 'media')
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max)
+    .replace(/[. ]+$/, '') || 'media';
+}
+
+function seriesName(title) {
+  const orig = String(title || '').replace(/\s+/g, ' ').trim();
+  let t = orig.replace(/\s+[-\u2013\u2014\u2022\u00B7\u00BB]\s+.*$/, '').replace(/\s*\|.*$/, ''); // "Show - Site" / "Show | Site" (a dash inside a word stays)
+  const cut = t.replace(/[\s:,\-\u2013\u2014(\[]*\b(?:episode|eps?\.?|chapter|chap\.?|ch\.?|\u00E9pisode|folge|cap[i\u00ED]tulo)\s*#?\d+(?:\.\d+)?\b.*$/i, '');
+  if (cut.trim()) t = cut;
+  t = t.replace(/^(?:watch|read|download|stream)\s+/i, '')
+       .replace(/[\s(\[]*\b(?:english\s*)?(?:sub(?:bed|titled)?|dub(?:bed)?)(?:\s*[\/&,]\s*(?:sub(?:bed|titled)?|dub(?:bed)?))*\b[\s)\]]*$/i, '')
+       .replace(/\s*\b(?:online|free|hd|full)\b\s*$/i, '')
+       .replace(/[\s:,\-\u2013\u2014|]+$/, '').trim();
+  return t || orig;
+}
+
+function seriesBase(t) {
+  const n = seriesName(String(t || '').replace(/[\s._-]*\bS\d{1,2}\s*E\d+.*$/i, '')).replace(/[\s:,\-\u2013\u2014]*\b(?:season\s*\d{1,2}|\d{1,2}(?:st|nd|rd|th)\s*season|s\d{1,2})\s*$/i, '').trim();
+  return n || seriesName(t);
+}
+
+function parseNumList(text, max) {
+  const out = new Set();
+  const norm = String(text || '').replace(/\s*(?:\u2013|\u2014|\bto\b)\s*/gi, '-').replace(/\s*-\s*/g, '-');
+  for (const part of norm.split(/[,;\s]+/).filter(Boolean)) {
+    const m = /^(\d+(?:\.\d+)?)?(?:-|\.\.)(\d+(?:\.\d+)?)?$/.exec(part);
+    if (m && (m[1] || m[2])) {
+      const a = m[1] != null ? +m[1] : 1, b = m[2] != null ? +m[2] : max;
+      if (b == null || !isFinite(b) || b - a > 2000) continue;
+      for (let n = Math.floor(a); n <= Math.floor(b); n++) out.add(n);
+    } else if (/^\d+(?:\.\d+)?$/.test(part)) out.add(+part);
+  }
+  return [...out].sort((x, y) => x - y);
+}
+
+function epNumOf(label, url) {
+  const L = String(label || '');
+  let m = /\bS\d+\s*E(\d+)/i.exec(L) || /(?:episode|ep\.?|chapter|chap\.?|ch\.?|#)\s*[-_.:]?\s*(\d+(?:\.\d+)?)/i.exec(L);
+  if (m) return +m[1];
+  m = L.match(/(\d+(?:\.\d+)?)(?!.*\d)/);
+  if (m) return +m[1];
+  try {
+    const pth = decodeURIComponent(new URL(url).pathname).replace(/\.(m3u8|mpd|mp4|webm|mkv|html?|php)$/i, '');
+    m = pth.match(/(?:episode|ep|chapter|chap|ch)[-_/]*(\d+(?:\.\d+)?)/i) || pth.match(/(\d+(?:\.\d+)?)(?!.*\d)/);
+  } catch (e) { m = null; }
+  return m ? +m[1] : null;
+}
+
+function expandPattern(line, nums) {
+  return nums.map((n) => line.replace(/\{(n{1,4})\}/g, (m, k) => String(n).padStart(k.length, '0')));
+}
+
+function patternFromUrl(url) {
+  let u; try { u = new URL(url); } catch (e) { return null; }
+  // some sites put a random code after the number (/ep-5-ad7134): the episode is 5, the code is not a number to count with
+  const hm = /((?:episode|ep|chapter|chap|ch)[-_]?)(\d+(?:\.\d+)?)([-_](?=[a-z0-9]*\d)(?=[a-z0-9]*[a-z])[a-z0-9]{3,10})\/?$/i.exec(u.pathname);
+  if (hm) {
+    const cut = hm.index + hm[1].length;
+    return { pattern: u.origin + u.pathname.slice(0, cut) + '{n}' + hm[3][0] + '{h}' + u.search, n: +hm[2], hashed: true };
+  }
+  const re = /(\d+)(?!.*\d)/; // last number of the path (then of the query)
+  let m = re.exec(u.pathname);
+  if (m) { const i = m.index; return { pattern: u.origin + u.pathname.slice(0, i) + '{' + 'n'.repeat(m[1].length > 1 && m[1][0] === '0' ? m[1].length : 1) + '}' + u.pathname.slice(i + m[1].length) + u.search, n: +m[1] }; }
+  m = re.exec(u.search);
+  if (m) { const i = m.index; return { pattern: u.origin + u.pathname + u.search.slice(0, i) + '{n}' + u.search.slice(i + m[1].length), n: +m[1] }; }
+  return null;
+}
+
+function seasonOf(book, chapter) {
+  const t = String(chapter || '') + ' | ' + String(book || '');
+  let m = /\bS(\d{1,2})\s*E\d+/i.exec(t) || /\bseason\s*(\d{1,2})\b/i.exec(t) || /\b(\d{1,2})(?:st|nd|rd|th)\s*season\b/i.exec(t) || /\bs(\d{1,2})\b/i.exec(String(book || ''));
+  return m ? +m[1] : 1;
+}
+
+/* patternFromUrl looks for the LAST number in the path, which for "ep05.m3u8" is the 8 of "m3u8". For media links set the file
+   extension aside first, then put it back, so only the episode number is replaced. */
+function patternFromMedia(url){
+  var u; try{ u=new URL(url) }catch(e){ return null }
+  var m=/\.(m3u8|mpd|mp4|webm|mkv|mov|mp3|m4a|aac|ogg|wav|vtt|srt|html?|php)$/i.exec(u.pathname);
+  if(!m) return patternFromUrl(url);
+  u.pathname=u.pathname.slice(0,-m[0].length);
+  var p=patternFromUrl(u.href); if(!p) return null;
+  var q=p.pattern.indexOf("?");
+  if((q<0 ? p.pattern : p.pattern.slice(0,q)).indexOf("{")<0) return null; // number only in the query (token / time): not an episode
+  p.pattern = q<0 ? p.pattern+m[0] : p.pattern.slice(0,q)+m[0]+p.pattern.slice(q);
+  return p;
+}
+
+/* ---------- state ---------- */
+var items = [];          // {url, kind, on}
+var settings = (function(){ var d={auto:false, page:true, hist:true, lib:false, delay:180}, g=sget("settings",{}), k; for(k in g) d[k]=g[k]; return d; })();
+var history_ = sget("history", []);
+var sites = sget("sites", []);
+
+/* ---------- tabs ---------- */
+function showTab(n){
+  document.querySelectorAll(".tab").forEach(function(s){s.classList.toggle("on", s.id==="t-"+n)});
+  document.querySelectorAll(".tabs button").forEach(function(b){b.classList.toggle("on", b.dataset.t===n)});
+  window.scrollTo(0,0);
+}
+document.querySelectorAll(".tabs button").forEach(function(b){b.onclick=function(){showTab(b.dataset.t)}});
+
+/* ---------- grab: parse + render ---------- */
+function parse(){
+  var urls = extractUrls($("links").value);
+  var prev = {};
+  items.forEach(function(i){prev[i.url]=i.on});
+  items = urls.map(function(u){
+    var k = kindOf(u);
+    return {url:u, kind:k, on: u in prev ? prev[u] : k!=="page"};
+  });
+  render();
+}
+function render(){
+  var list = $("list");
+  list.innerHTML = "";
+  var media = items.filter(function(i){return i.kind!=="page"}).length;
+  $("listCard").style.display = items.length ? "" : "none";
+  $("emptyCard").style.display = items.length ? "none" : "";
+  $("listTitle").textContent = items.length+" link"+(items.length===1?"":"s")+" · "+media+" media";
+  items.forEach(function(it,idx){
+    var d = document.createElement("div");
+    d.className="item";
+    var h = hint(it.url,it.kind);
+    d.innerHTML =
+      '<input type="checkbox" '+(it.on?"checked":"")+' data-i="'+idx+'" aria-label="select">'+
+      '<span class="badge k-'+it.kind+'">'+LABEL[it.kind]+'</span>'+
+      '<div class="meta"><div class="nm">'+esc(nameOf(it.url))+'</div><div class="hs">'+esc(hostOf(it.url))+'</div>'+
+      (h?'<div class="hint">'+esc(h)+'</div>':'')+'</div>'+
+      (it.kind==="page"
+        ? '<button class="btn sm" data-open="'+idx+'">Open</button><button class="btn sm ghost" data-file="'+idx+'" title="Download as a plain file">File</button>'
+        : (it.kind!=="subtitle" && has("mediaPlayer") ? '<button class="btn sm ghost" data-play="'+idx+'" title="Play in the Hub player">▶</button>' : ''));
+    list.appendChild(d);
+  });
+  var n = items.filter(function(i){return i.on}).length;
+  $("bGo").disabled = n===0;
+  $("bGo").textContent = n ? "⬇ Download "+n+(n===1?" file":" files") : "Select something to download";
+  $("selAll").checked = items.length>0 && n===items.length;
+}
+$("list").addEventListener("change",function(e){
+  var i = e.target.dataset && e.target.dataset.i;
+  if(i!=null){ items[+i].on = e.target.checked; render(); }
+});
+$("list").addEventListener("click",function(e){
+  var b = e.target.closest("button"); if(!b) return;
+  if(b.dataset.open!=null) openBrowser(items[+b.dataset.open].url);
+  if(b.dataset.play!=null){ var pi=items[+b.dataset.play]; try{ if(!J.mediaPlay(pi.url, refererFor(), $("title").value.trim())) toast("Cannot play this link"); }catch(e){ toast("Player needs Hub v0.9.3+") } }
+  if(b.dataset.file!=null){ var it=items[+b.dataset.file]; it.kind="file"; it.on=true; render(); toast("Will download as a plain file"); }
+});
+$("selAll").onchange=function(){ var v=this.checked; items.forEach(function(i){i.on=v}); render(); };
+$("links").addEventListener("input",parse);
+$("bClear").onclick=function(){ $("links").value=""; items=[]; render(); };
+
+$("bPaste").onclick=function(){
+  function fallback(){ $("links").focus(); toast("Long-press in the box and choose Paste"); }
+  try{
+    if(navigator.clipboard && navigator.clipboard.readText){
+      navigator.clipboard.readText().then(function(t){
+        if(!t){ toast("Clipboard is empty"); return }
+        $("links").value = ($("links").value ? $("links").value.replace(/\s+$/,"")+"\n" : "") + t;
+        parse();
+      }).catch(fallback);
+      return;
+    }
+  }catch(e){}
+  fallback();
+};
+
+/* ---------- download ---------- */
+function refererFor(list){
+  var manual = $("referer").value.trim();
+  if(manual) return manual;
+  // A normal page link pasted together with the media links is the best referer.
+  var pg = items.filter(function(i){return i.kind==="page"}).map(function(i){return i.url})[0];
+  return pg || "";
+}
+function pad(n,t){ var s=String(n); while(s.length<String(t).length || s.length<2) s="0"+s; return s }
+/* Library naming: "Show - S01E05". Episode numbers come from each link when they are all different, else count 1, 2, 3 in order
+   (video and subtitle lists are counted separately, so the nth subtitle gets the nth video's name). */
+var EXPLICIT_EP = /\bS\d{1,2}\s*E\d+|\b(?:episode|ep\.?|chapter|chap\.?|ch\.?)\s*#?\s*\d|#\s*\d/i;
+function epPad(n){ var e=Math.floor(n), f=n%1?String(n).slice(String(n).indexOf(".")):""; return String(e).padStart(e>=100?3:2,"0")+f }
+function libraryTitles(list, baseTitle){
+  var out=new Array(list.length), series=sanitize(seriesBase(baseTitle),80);
+  var ss=String(seasonOf(baseTitle,"")).padStart(2,"0");
+  if(list.length===1 && EXPLICIT_EP.test(baseTitle)){
+    var one=epNumOf(baseTitle,"");
+    if(one!=null) out[0]=series+" - S"+ss+"E"+epPad(one);
+    return out;
+  }
+  var groups={};
+  list.forEach(function(it,i){ (groups[it.kind]=groups[it.kind]||[]).push(i) });
+  Object.keys(groups).forEach(function(k){
+    var idx=groups[k], nums=idx.map(function(i){ return epNumOf("",list[i].url) });
+    var seen={}, distinct=nums.every(function(n){ if(n==null||seen[n]) return false; seen[n]=1; return true });
+    idx.forEach(function(i,j){ out[i]=series+" - S"+ss+"E"+epPad(distinct?nums[j]:j+1) });
+  });
+  return out;
+}
+function startDownloads(list, referer, baseTitle, keepName){
+  if(!J || !J.mediaDownload){ toast("This Hub version cannot download"); return 0 }
+  var ok=0, total=list.length, i=0;
+  var libT = (settings.lib && baseTitle && !keepName) ? libraryTitles(list, baseTitle) : null;
+  (function next(){
+    if(i>=list.length){
+      toast(ok===total ? "Started "+ok+" download"+(ok===1?"":"s")+" — see notification" : ok+" of "+total+" started");
+      return;
+    }
+    var it=list[i], t="";
+    if(libT && libT[i]) t = libT[i];
+    else if(baseTitle) t = total>1 ? baseTitle+" "+pad(i+1,total) : baseTitle;
+    var started=false;
+    try{ started = !!J.mediaDownload(it.url, referer||"", t) }catch(e){}
+    if(started){
+      ok++;
+      if(settings.hist) logHistory(it, referer, t);
+    }
+    i++;
+    setTimeout(next, +settings.delay||180);
+  })();
+  return total;
+}
+$("bGo").onclick=function(){
+  var sel = items.filter(function(i){return i.on});
+  if(!sel.length) return;
+  startDownloads(sel, refererFor(), $("title").value.trim());
+};
+
+/* ---------- episode batch, quick select, sort, copy ---------- */
+$("bMake").onclick=function(){
+  var info=$("bInfo"), src=$("bUrl").value.trim() || extractUrls($("links").value)[0] || "";
+  if(!src){ toast("Paste an episode link first"); return }
+  var p=patternFromMedia(src);
+  if(!p){ info.textContent="No episode number found in that link."; return }
+  if(p.hashed){ info.textContent="This site adds a random code after the number, so the other links cannot be guessed. Open each episode in Browser instead."; return }
+  var nums=parseNumList($("bRange").value, 500);
+  if(!nums.length){ toast("Type episodes, e.g. 1-12"); return }
+  if(nums.length>200){ nums=nums.slice(0,200); toast("Limited to 200 at once") }
+  var made=expandPattern(p.pattern, nums);
+  var cur=extractUrls($("links").value).filter(function(u){ return u!==src });
+  made.forEach(function(u){ if(cur.indexOf(u)<0) cur.push(u) });
+  $("links").value=cur.join("\n");
+  parse();
+  info.textContent="Added "+made.length+" links ("+nums[0]+(nums.length>1?"–"+nums[nums.length-1]:"")+"). Check them below, then Download. If these are page links, open them in Browser to catch the media.";
+};
+document.querySelectorAll("[data-sel]").forEach(function(b){
+  b.onclick=function(){
+    var m=b.dataset.sel;
+    items.forEach(function(i){ i.on = m==="media" ? i.kind!=="page" : i.kind===m });
+    render();
+  };
+});
+$("bSort").onclick=function(){
+  var urls=extractUrls($("links").value);
+  if(urls.length<2) return;
+  urls.sort(function(a,b){ return a.localeCompare(b, undefined, {numeric:true}) });
+  $("links").value=urls.join("\n"); parse(); toast("Sorted");
+};
+$("bCopySel").onclick=function(){
+  var sel=items.filter(function(i){return i.on}).map(function(i){return i.url});
+  if(!sel.length){ toast("Nothing selected"); return }
+  if(J && J.copyText){ try{ J.copyText(sel.join("\n")); toast("Copied "+sel.length+" link"+(sel.length===1?"":"s")); return }catch(e){} }
+  try{ navigator.clipboard.writeText(sel.join("\n")).then(function(){ toast("Copied") },function(){ toast("Copy not available") }) }catch(e){ toast("Copy not available") }
+};
+
+/* ---------- history ---------- */
+function logHistory(it, referer, title){
+  history_.unshift({u:it.url,k:it.kind,r:referer||"",t:title||"",ts:Date.now()});
+  history_ = history_.slice(0,200);
+  sset("history", history_);
+  renderHistory();
+}
+function ago(ts){
+  var s=Math.max(1,Math.round((Date.now()-ts)/1000));
+  if(s<60) return s+"s ago"; if(s<3600) return Math.round(s/60)+"m ago";
+  if(s<86400) return Math.round(s/3600)+"h ago"; return Math.round(s/86400)+"d ago";
+}
+function renderHistory(){
+  var box=$("hist"); box.innerHTML="";
+  $("noHist").style.display = history_.length ? "none":"";
+  history_.forEach(function(h,idx){
+    var d=document.createElement("div"); d.className="item";
+    d.innerHTML='<span class="badge k-'+h.k+'">'+LABEL[h.k]+'</span>'+
+      '<div class="meta"><div class="nm">'+esc(h.t||nameOf(h.u))+'</div><div class="hs">'+esc(hostOf(h.u))+' · '+ago(h.ts)+'</div></div>'+
+      '<button class="btn sm" data-again="'+idx+'" title="Download again">↻</button>'+
+      '<button class="btn sm ghost" data-copy="'+idx+'" title="Copy link">⧉</button>';
+    box.appendChild(d);
+  });
+}
+$("hist").addEventListener("click",function(e){
+  var b=e.target.closest("button"); if(!b) return;
+  if(b.dataset.again!=null){ var h=history_[+b.dataset.again]; startDownloads([{url:h.u,kind:h.k}], h.r, h.t, true); }
+  if(b.dataset.copy!=null){ var u=history_[+b.dataset.copy].u; if(J&&J.copyText) J.copyText(u); else toast("Copy not available"); }
+});
+$("bDls").onclick=function(){ try{ if(!J.openDownloads()) toast("Not available") }catch(e){ toast("Needs Hub v0.9.4+") } };
+$("bClearH").onclick=function(){
+  if(!history_.length) return;
+  if(!confirm("Clear the history list? Downloaded files are not touched.")) return;
+  history_=[]; sset("history",history_); renderHistory();
+};
+
+/* ---------- browser ---------- */
+function normalizeAddr(t){
+  t=t.trim(); if(!t) return "";
+  if(/^https?:\/\//i.test(t)) return t;
+  if(/\s/.test(t) || t.indexOf(".")<0) return "https://duckduckgo.com/?q="+encodeURIComponent(t);
+  return "https://"+t;
+}
+function openBrowser(u){
+  if(!J || !J.openBrowser){ toast("Browser is not available in this Hub version"); return }
+  if(!J.openBrowser(u)) toast("Could not open that address");
+}
+$("bOpen").onclick=function(){ var u=normalizeAddr($("url").value); if(u) openBrowser(u); };
+$("url").addEventListener("keydown",function(e){ if(e.key==="Enter"){ e.preventDefault(); $("bOpen").click(); }});
+$("bAddSite").onclick=function(){
+  var u=normalizeAddr($("url").value);
+  if(!/^https?:\/\//i.test(u) || u.indexOf("duckduckgo.com/?q=")>=0){ toast("Type a site address in the box first"); return }
+  var h=hostOf(u).replace(/^www\./,"");
+  if(sites.some(function(s){return s.u===u})){ toast("Already saved"); return }
+  sites.push({u:u,n:h}); sset("sites",sites); renderSites(); toast("Saved "+h);
+};
+function renderSites(){
+  var box=$("sites"); box.innerHTML="";
+  $("noSites").style.display = sites.length?"none":"";
+  sites.forEach(function(s,i){
+    var d=document.createElement("div"); d.className="site";
+    d.innerHTML='<div class="fav" data-go="'+i+'">'+esc((s.n||"?").charAt(0).toUpperCase())+'</div><div class="st" data-go="'+i+'">'+esc(s.n)+'</div><button class="x" data-del="'+i+'" aria-label="remove">✕</button>';
+    box.appendChild(d);
+  });
+}
+$("sites").addEventListener("click",function(e){
+  var g=e.target.closest("[data-go]"), x=e.target.closest("[data-del]");
+  if(g) openBrowser(sites[+g.dataset.go].u);
+  if(x){ sites.splice(+x.dataset.del,1); sset("sites",sites); renderSites(); }
+});
+
+/* ---------- settings ---------- */
+["auto","page","hist"].forEach(function(k){
+  var el=$({auto:"sAuto",page:"sPage",hist:"sHist"}[k]);
+  el.checked=!!settings[k];
+  el.onchange=function(){ settings[k]=el.checked; sset("settings",settings); };
+});
+$("sLib").checked=!!settings.lib;
+$("sLib").onchange=function(){ settings.lib=$("sLib").checked; sset("settings",settings); };
+$("sDelay").value=String(settings.delay||180);
+if($("sDelay").value!==String(settings.delay||180)) $("sDelay").value="180";
+$("sDelay").onchange=function(){ settings.delay=+$("sDelay").value||180; sset("settings",settings); };
+function shareState(){
+  $("shareState").textContent = has("shareIntake") ? "Share entry: available ✓" : "Needs Hub v0.9.5 or newer for the Share entry.";
+}
+function bubbleState(){
+  var supported = J && J.floaterEnabled;
+  if(!supported){ $("bBubble").disabled=true; $("bubbleState").textContent="Needs Hub v0.9.1+"; return }
+  var on=false; try{ on=J.floaterEnabled() }catch(e){}
+  $("bubbleState").textContent = on ? "On ✓" : "Off";
+  $("bBubble").textContent = on ? "Bubble is on" : "Show in bubble";
+  $("bBubble").disabled = on;
+}
+$("bBubble").onclick=function(){
+  try{ if(J.floaterRequestEnable()) toast("Confirm in the dialog"); }catch(e){ toast("Not available") }
+  setTimeout(bubbleState,1500);
+};
+
+/* ---------- floating bubble payload ---------- */
+function onFloater(){
+  var raw=null; try{ raw = J && J.floaterGet ? J.floaterGet() : null }catch(e){}
+  if(!raw) return;
+  var p={}; try{ p=JSON.parse(raw) }catch(e){}
+  try{ J.floaterClear() }catch(e){}
+  var urls = extractUrls(p.text);
+  var bn=$("floaterBanner");
+  showTab("grab");
+  if(p.source==="share"){
+    // A line without a link (for example the page title sent by the Hub browser) becomes the name, if none is typed yet.
+    var tl=String(p.text||"").split(/\r?\n/).map(function(l){return l.trim()}).filter(function(l){return l && !/https?:\/\//i.test(l)})[0];
+    if(tl && tl.length<=120 && !$("title").value.trim()) $("title").value=tl;
+    return onShared(urls, bn);
+  }
+  if(!urls.length){
+    bn.style.display=""; bn.innerHTML="<b>Nothing copied.</b> Copy a video, stream or page link, then tap the 🎬 bubble.";
+    return;
+  }
+  $("links").value = urls.join("\n");
+  parse();
+  var media = items.filter(function(i){return i.kind!=="page"});
+  if(media.length && settings.auto){
+    bn.style.display=""; bn.innerHTML="<b>Auto-started</b> "+media.length+" download"+(media.length===1?"":"s")+" from the bubble.";
+    startDownloads(media, refererFor(), "");
+  }else if(!media.length && urls.length===1 && settings.page){
+    bn.style.display=""; bn.innerHTML="<b>Page link</b> — opening in the Hub browser. Play the video to catch it.";
+    openBrowser(urls[0]);
+  }else{
+    bn.style.display=""; bn.innerHTML="<b>"+urls.length+" link"+(urls.length===1?"":"s")+" from the bubble.</b> Check them and tap Download.";
+  }
+}
+
+/* Share sheet (Share -> Jabra Grab). Never starts a download by itself, whatever the "automatic" setting says: any app can
+   share to us, so the user always taps Download. Links are added to the list (no duplicates), so sharing several in a row works. */
+function onShared(urls, bn){
+  bn.style.display="";
+  if(!urls.length){ bn.innerHTML="<b>Nothing to grab.</b> That share had no link in it."; return }
+  var cur=extractUrls($("links").value), added=0;
+  urls.forEach(function(u){ if(cur.indexOf(u)<0){ cur.push(u); added++ } });
+  $("links").value=cur.join("\n");
+  parse();
+  var media=items.filter(function(i){return i.kind!=="page"}).length;
+  if(!media && urls.length===1 && settings.page){
+    bn.innerHTML="<b>Shared page</b> — opening in the Hub browser. Play the video to catch it.";
+    openBrowser(urls[0]);
+  }else if(!added){
+    bn.innerHTML="<b>Already in the list.</b> Check the links and tap Download.";
+  }else{
+    bn.innerHTML="<b>Shared "+added+" link"+(added===1?"":"s")+".</b> Check them and tap Download."+(media?"":" These look like pages: open one in Browser to catch the media.");
+  }
+}
+window.__jabraFloater = onFloater;
+
+/* ---------- boot ---------- */
+(function boot(){
+  var miss=[];
+  if(!J) miss.push("This page must run inside Jabra Extension Hub.");
+  else{
+    if(!has("mediaDownload")) miss.push("Downloads need Hub v0.9.2 or newer.");
+    if(!has("browser")) miss.push("The browser needs Hub v0.9.2 or newer.");
+  }
+  if(miss.length){ var m=$("missing"); m.style.display=""; m.innerHTML="<b>Update needed.</b> "+miss.join(" "); }
+  var info={}; try{ info = J && J.info ? JSON.parse(J.info()) : {} }catch(e){}
+  $("about").textContent = "Media Grabber 1.4.1 · Hub "+(info.hostVersion||"?")+" · saves to Downloads/JabraHub. Detection and downloads run in the Hub's own engine: direct files and unencrypted HLS only.";
+  renderSites(); renderHistory(); bubbleState(); shareState(); render();
+  onFloater();
+})();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "id": "media-grabber",
+  "name": "Media Grabber",
+  "version": "1.4.1",
+  "category": "Media",
+  "description": "Download videos, HLS (.m3u8) streams, audio and subtitles. Paste links (batch), Share a link from any app (Share → Jabra Grab), make 1–12 episode lists from one link, Plex/Jellyfin-style names, browse sites in the Hub browser to catch media, use the floating bubble with a copied link, and keep a history.",
+  "entry": "index.html",
+  "minJabraApiVersion": 1,
+  "requiredCapabilities": [
+    "browser",
+    "mediaDownload"
+  ],
+  "floater": {
+    "icon": "🎬",
+    "label": "Grab media",
+    "color": "#E85D9A",
+    "source": "clipboard",
+    "allowEmpty": true
+  },
+  "share": true
+}
