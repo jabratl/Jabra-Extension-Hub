@@ -51,7 +51,7 @@
                 android:value="Floating shortcut bubble that the user taps to scan copied text" />
         </service>
 
-        <!-- "Jabra Scan": text-selection menu, Share sheet and Open-with entry point. -->
+        <!-- "Jabra Scan": text-selection menu, Open-with and clipboard entry point. The Share sheet entry is ShareActivity ("Jabra"), which forwards here. -->
         <activity
             android:name=".IntakeActivity"
             android:exported="true"
@@ -66,14 +66,6 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
             <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
-                <data android:mimeType="text/html" />
-                <data android:mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
-                <data android:mimeType="application/epub+zip" />
-            </intent-filter>
-            <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:scheme="content" />
@@ -84,11 +76,11 @@
             </intent-filter>
         </activity>
 
-        <!-- "Jabra Grab": Share-sheet entry that hands a shared link to a plugin that declares "share": true. -->
+        <!-- "Jabra": the one Share-sheet entry. Files and text are read as a chapter; a link can also go to a plugin that declares "share": true. -->
         <activity
             android:name=".ShareActivity"
             android:exported="true"
-            android:label="Jabra Grab"
+            android:label="Jabra"
             android:theme="@style/Theme.Hub.Intake"
             android:excludeFromRecents="true"
             android:noHistory="true"
@@ -97,6 +89,9 @@
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
+                <data android:mimeType="text/html" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+                <data android:mimeType="application/epub+zip" />
             </intent-filter>
         </activity>
 
@@ -115,6 +110,10 @@
             android:launchMode="singleTop"
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout" />
+
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false" />
 
         <activity
             android:name=".DownloadsActivity"
