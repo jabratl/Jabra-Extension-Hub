@@ -43,7 +43,9 @@ import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import java.text.DateFormat
+import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.Locale
 
 class BrowserActivity : AppCompatActivity() {
 
@@ -65,6 +67,15 @@ class BrowserActivity : AppCompatActivity() {
     private val picker = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         fileCb?.onReceiveValue(if (uris.isNullOrEmpty()) null else uris.toTypedArray())
         fileCb = null
+    }
+
+    // ---------- bookmark export / import (Hub 0.9.6): Android file picker, no storage permission needed ----------
+    private var bmOp = ""
+    private val bmFile = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+        val uri = res.data?.data
+        val op = bmOp
+        bmOp = ""
+        if (res.resultCode == RESULT_OK && uri != null && op.isNotEmpty()) runBookmarkFile(op, uri)
     }
 
     private var customView: View? = null
@@ -312,6 +323,7 @@ class BrowserActivity : AppCompatActivity() {
         val m = PopupMenu(this, anchor)
         m.menu.add(0, 1, 0, if (marked) "★ Remove bookmark" else "☆ Add bookmark")
         m.menu.add(0, 2, 1, "Bookmarks")
+        m.menu.add(0, 13, 1, "Bookmarks: export / import")
         m.menu.add(0, 3, 2, "History")
         m.menu.add(0, 4, 3, "Forward")
         m.menu.add(0, 5, 4, "Reload")
@@ -364,6 +376,7 @@ class BrowserActivity : AppCompatActivity() {
                 }
                 11 -> confirmClear()
                 12 -> startActivity(Intent(this, DownloadsActivity::class.java))
+                13 -> showBookmarkTools()
             }
             true
         }
@@ -378,7 +391,7 @@ class BrowserActivity : AppCompatActivity() {
         val df = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
         val labels = list.map {
             val name = if (it.title.isBlank()) it.url else it.title
-            name + "\n" + (Uri.parse(it.url).host ?: "") + "  ·  " + df.format(Date(it.ts))
+            name + "\n" + (Uri.parse(it.url).host ?: "") + "  ·  " + df.format(Date(it.ts)) + (if (it.folder.isNotBlank()) "  ·  📁 " + it.folder else "")
         }.toTypedArray()
         MaterialAlertDialogBuilder(this)
             .setTitle(title)
@@ -386,6 +399,108 @@ class BrowserActivity : AppCompatActivity() {
             .setNegativeButton("Close", null)
             .setNeutralButton(clearLabel) { _, _ -> onClear() }
             .show()
+    }
+
+    // ---------- bookmark tools ----------
+
+    private fun showBookmarkTools() {
+        val n = BrowserStore.bookmarks(this).size
+        val items = arrayOf(
+            "Export as JSON (backup)",
+            "Export as HTML (Chrome / Firefox / Edge)",
+            "Import: add to my bookmarks",
+            "Import: replace all my bookmarks"
+        )
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Bookmarks ($n)")
+            .setItems(items) { _, i ->
+                when (i) {
+                    0 -> bmExport("export_json")
+                    1 -> bmExport("export_html")
+                    2 -> bmImport("import_merge")
+                    3 -> MaterialAlertDialogBuilder(this)
+                        .setTitle("Replace all bookmarks?")
+                        .setMessage("Your current $n bookmarks are removed and replaced by the ones in the file. Export a backup first if you are not sure.")
+                        .setNegativeButton("Cancel", null)
+                        .setPositiveButton("Choose file") { _, _ -> bmImport("import_replace") }
+                        .show()
+                    else -> Unit
+                }
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun bmExport(op: String) {
+        if (BrowserStore.bookmarks(this).isEmpty()) {
+            Toast.makeText(this, "No bookmarks to export", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val json = op == "export_json"
+        val stamp = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        launchBm(
+            op,
+            Intent(Intent.ACTION_CREATE_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .setType(if (json) "application/json" else "text/html")
+                .putExtra(Intent.EXTRA_TITLE, "jabra-bookmarks-$stamp." + if (json) "json" else "html")
+        )
+    }
+
+    private fun bmImport(op: String) {
+        launchBm(op, Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"))
+    }
+
+    private fun launchBm(op: String, i: Intent) {
+        bmOp = op
+        try {
+            bmFile.launch(i)
+        } catch (_: Exception) {
+            bmOp = ""
+            Toast.makeText(this, "No file picker available on this device", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun runBookmarkFile(op: String, uri: Uri) {
+        val app = applicationContext
+        Thread {
+            val msg = try {
+                if (op.startsWith("export")) {
+                    val text = if (op == "export_json") BrowserStore.exportJson(app) else BrowserStore.exportHtml(app)
+                    val out = contentResolver.openOutputStream(uri, "wt") ?: throw java.io.IOException("cannot write the file")
+                    out.use { it.write(text.toByteArray(Charsets.UTF_8)) }
+                    "Exported ${BrowserStore.bookmarks(app).size} bookmarks"
+                } else {
+                    val ins = contentResolver.openInputStream(uri) ?: throw java.io.IOException("cannot read the file")
+                    val bytes = ins.use { readLimited(it, 5_000_000) }
+                    val items = BrowserStore.parseBookmarks(String(bytes, Charsets.UTF_8))
+                    if (items.isEmpty()) {
+                        "No bookmarks found in that file"
+                    } else {
+                        val r = BrowserStore.importBookmarks(app, items, op == "import_replace")
+                        "Imported ${r.added} new" + if (r.skipped > 0) ", skipped ${r.skipped} (already saved or over the limit)" else ""
+                    }
+                }
+            } catch (e: Exception) {
+                AppDiagnostics.record(app, "Bookmarks $op failed", e)
+                "Failed: ${e.message ?: "unknown error"}"
+            }
+            runOnUiThread { Toast.makeText(app, msg, Toast.LENGTH_LONG).show() }
+        }.start()
+    }
+
+    private fun readLimited(ins: java.io.InputStream, max: Int): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        val buf = ByteArray(16384)
+        var total = 0
+        while (true) {
+            val n = ins.read(buf)
+            if (n < 0) break
+            total += n
+            if (total > max) throw java.io.IOException("file is too large (limit 5 MB)")
+            out.write(buf, 0, n)
+        }
+        return out.toByteArray()
     }
 
     private fun confirmClear() {
