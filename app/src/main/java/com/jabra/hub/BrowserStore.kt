@@ -207,4 +207,40 @@ object BrowserStore {
         save(ctx, BOOKMARKS, list)
         return ImportResult(added, skipped, items.size)
     }
+
+    // ---------- manager helpers (Hub 0.9.6b): rename, move, delete one, history export ----------
+
+    fun bookmarkFolders(ctx: Context): List<String> =
+        load(ctx, BOOKMARKS).map { it.folder }.filter { it.isNotBlank() }.distinct().sorted()
+
+    /** Changes the title and folder of one bookmark (found by its link). */
+    fun updateBookmark(ctx: Context, url: String, title: String, folder: String) {
+        val list = load(ctx, BOOKMARKS)
+        val i = list.indexOfFirst { it.url == url }
+        if (i < 0) return
+        val old = list[i]
+        list[i] = BrowserEntry(old.url, title.trim().take(160), old.ts, folder.trim().replace('\n', ' ').take(80))
+        save(ctx, BOOKMARKS, list)
+    }
+
+    fun removeBookmark(ctx: Context, url: String) {
+        val list = load(ctx, BOOKMARKS)
+        if (list.removeAll { it.url == url }) save(ctx, BOOKMARKS, list)
+    }
+
+    fun removeHistory(ctx: Context, url: String) {
+        val list = load(ctx, HISTORY)
+        if (list.removeAll { it.url == url }) save(ctx, HISTORY, list)
+    }
+
+    /** Plain text, newest first: date and title on one line, the link on the next. */
+    fun exportHistoryText(ctx: Context): String {
+        val df = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US)
+        val sb = StringBuilder()
+        for (e in history(ctx)) {
+            sb.append(df.format(java.util.Date(e.ts))).append("  ").append(e.title.ifBlank { e.url }).append('\n')
+            sb.append(e.url).append("\n\n")
+        }
+        return sb.toString()
+    }
 }

@@ -347,8 +347,8 @@ class BrowserActivity : AppCompatActivity() {
                     val now = BrowserStore.toggleBookmark(this, pageUrl, web.title ?: "")
                     Toast.makeText(this, if (now) "Bookmarked" else "Bookmark removed", Toast.LENGTH_SHORT).show()
                 }
-                2 -> showList("Bookmarks", BrowserStore.bookmarks(this), "Remove all") { BrowserStore.clearBookmarks(this) }
-                3 -> showList("History", BrowserStore.history(this), "Clear all") { BrowserStore.clearHistory(this) }
+                2 -> showManager(true)
+                3 -> showManager(false)
                 4 -> if (web.canGoForward()) web.goForward()
                 5 -> web.reload()
                 6 -> {
@@ -399,6 +399,188 @@ class BrowserActivity : AppCompatActivity() {
             .setNegativeButton("Close", null)
             .setNeutralButton(clearLabel) { _, _ -> onClear() }
             .show()
+    }
+
+    // ---------- bookmark / history manager (Hub 0.9.6b): search, long-press actions ----------
+
+    private fun entryLabel(e: BrowserEntry, df: DateFormat): String {
+        val name = if (e.title.isBlank()) e.url else e.title
+        return name + "\n" + (Uri.parse(e.url).host ?: "") + "  ·  " + df.format(Date(e.ts)) +
+            (if (e.folder.isNotBlank()) "  ·  📁 " + e.folder else "")
+    }
+
+    private fun showManager(isBookmarks: Boolean) {
+        val dp = resources.displayMetrics.density
+        val pad = (16 * dp).toInt()
+        val df = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
+        var all: List<BrowserEntry> = emptyList()
+        var shown: List<BrowserEntry> = emptyList()
+        var dlg: androidx.appcompat.app.AlertDialog? = null
+        val search = EditText(this)
+        search.hint = "Search title, link or folder"
+        search.setSingleLine(true)
+        val listView = android.widget.ListView(this)
+        val adapter = android.widget.ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, ArrayList<String>())
+        listView.adapter = adapter
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding(pad, pad / 2, pad, 0)
+        box.addView(search)
+        box.addView(listView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (300 * dp).toInt()))
+
+        fun refresh() {
+            all = if (isBookmarks) BrowserStore.bookmarks(this) else BrowserStore.history(this)
+            val q = search.text.toString().trim().lowercase(Locale.getDefault())
+            shown = if (q.isEmpty()) all else all.filter {
+                (it.title + " " + it.url + " " + it.folder).lowercase(Locale.getDefault()).contains(q)
+            }
+            adapter.clear()
+            if (shown.isEmpty()) adapter.add(if (all.isEmpty()) "Nothing saved yet" else "No match")
+            else adapter.addAll(shown.map { entryLabel(it, df) })
+            adapter.notifyDataSetChanged()
+        }
+
+        search.addTextChangedListener(object : android.text.TextWatcher {
+            override fun afterTextChanged(s: android.text.Editable?) { refresh() }
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+        })
+        listView.setOnItemClickListener { _, _, i, _ ->
+            if (i in shown.indices) {
+                dlg?.dismiss()
+                web.loadUrl(shown[i].url)
+            }
+        }
+        listView.setOnItemLongClickListener { _, _, i, _ ->
+            if (i in shown.indices) entryActions(shown[i], isBookmarks, { dlg?.dismiss() }, { refresh() })
+            true
+        }
+
+        dlg = MaterialAlertDialogBuilder(this)
+            .setTitle(if (isBookmarks) "Bookmarks" else "History")
+            .setView(box)
+            .setNegativeButton("Close", null)
+            .setNeutralButton("Clear") { _, _ ->
+                MaterialAlertDialogBuilder(this)
+                    .setTitle(if (isBookmarks) "Remove all bookmarks?" else "Clear all history?")
+                    .setMessage(if (isBookmarks) "Export a backup first if you are not sure." else "This cannot be undone.")
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Yes") { _, _ ->
+                        if (isBookmarks) BrowserStore.clearBookmarks(this) else BrowserStore.clearHistory(this)
+                    }
+                    .show()
+            }
+            .setPositiveButton(if (isBookmarks) "Tools" else "Export") { _, _ ->
+                if (isBookmarks) showBookmarkTools() else historyExport()
+            }
+            .show()
+        refresh()
+    }
+
+    private fun entryActions(e: BrowserEntry, isBookmarks: Boolean, onOpen: () -> Unit, onChanged: () -> Unit) {
+        val items = ArrayList<String>()
+        items.add("Open")
+        if (isBookmarks) {
+            items.add("Rename")
+            items.add("Move to folder")
+            items.add("Delete")
+        } else {
+            items.add("Add bookmark")
+            items.add("Delete from history")
+        }
+        items.add("Copy link")
+        MaterialAlertDialogBuilder(this)
+            .setTitle(if (e.title.isBlank()) e.url else e.title)
+            .setItems(items.toTypedArray()) { _, i ->
+                when (items[i]) {
+                    "Open" -> {
+                        onOpen()
+                        web.loadUrl(e.url)
+                    }
+                    "Rename" -> promptText("Rename bookmark", e.title.ifBlank { e.url }, "Name") { n ->
+                        BrowserStore.updateBookmark(this, e.url, n.ifBlank { e.url }, e.folder)
+                        onChanged()
+                    }
+                    "Move to folder" -> moveToFolder(e, onChanged)
+                    "Delete" -> {
+                        BrowserStore.removeBookmark(this, e.url)
+                        onChanged()
+                    }
+                    "Add bookmark" -> {
+                        if (!BrowserStore.isBookmarked(this, e.url)) BrowserStore.toggleBookmark(this, e.url, e.title)
+                        Toast.makeText(this, "Bookmarked", Toast.LENGTH_SHORT).show()
+                    }
+                    "Delete from history" -> {
+                        BrowserStore.removeHistory(this, e.url)
+                        onChanged()
+                    }
+                    "Copy link" -> {
+                        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        cm.setPrimaryClip(ClipData.newPlainText("link", e.url))
+                        Toast.makeText(this, "Link copied", Toast.LENGTH_SHORT).show()
+                    }
+                    else -> Unit
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun moveToFolder(e: BrowserEntry, onChanged: () -> Unit) {
+        val opts = ArrayList<String>()
+        opts.add("No folder")
+        opts.addAll(BrowserStore.bookmarkFolders(this))
+        opts.add("New folder…")
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Move to folder")
+            .setItems(opts.toTypedArray()) { _, i ->
+                fun put(f: String) {
+                    BrowserStore.updateBookmark(this, e.url, e.title, f)
+                    onChanged()
+                }
+                when {
+                    i == 0 -> put("")
+                    i == opts.size - 1 -> promptText("New folder", "", "Folder name (A / B makes a subfolder)") { n ->
+                        if (n.isNotBlank()) put(n)
+                    }
+                    else -> put(opts[i])
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun promptText(title: String, initial: String, hintText: String, ok: (String) -> Unit) {
+        val et = EditText(this)
+        et.setText(initial)
+        et.hint = hintText
+        et.setSingleLine(true)
+        et.setSelection(et.text.length)
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val box = FrameLayout(this)
+        box.setPadding(pad, pad / 2, pad, 0)
+        box.addView(et)
+        MaterialAlertDialogBuilder(this)
+            .setTitle(title)
+            .setView(box)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("OK") { _, _ -> ok(et.text.toString().trim()) }
+            .show()
+    }
+
+    private fun historyExport() {
+        if (BrowserStore.history(this).isEmpty()) {
+            Toast.makeText(this, "History is empty", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val stamp = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        launchBm(
+            "export_history",
+            Intent(Intent.ACTION_CREATE_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("text/plain")
+                .putExtra(Intent.EXTRA_TITLE, "jabra-history-$stamp.txt")
+        )
     }
 
     // ---------- bookmark tools ----------
@@ -466,10 +648,14 @@ class BrowserActivity : AppCompatActivity() {
         Thread {
             val msg = try {
                 if (op.startsWith("export")) {
-                    val text = if (op == "export_json") BrowserStore.exportJson(app) else BrowserStore.exportHtml(app)
+                    val text = when (op) {
+                        "export_json" -> BrowserStore.exportJson(app)
+                        "export_history" -> BrowserStore.exportHistoryText(app)
+                        else -> BrowserStore.exportHtml(app)
+                    }
                     val out = contentResolver.openOutputStream(uri, "wt") ?: throw java.io.IOException("cannot write the file")
                     out.use { it.write(text.toByteArray(Charsets.UTF_8)) }
-                    "Exported ${BrowserStore.bookmarks(app).size} bookmarks"
+                    if (op == "export_history") "Exported ${BrowserStore.history(app).size} history entries" else "Exported ${BrowserStore.bookmarks(app).size} bookmarks"
                 } else {
                     val ins = contentResolver.openInputStream(uri) ?: throw java.io.IOException("cannot read the file")
                     val bytes = ins.use { readLimited(it, 5_000_000) }
