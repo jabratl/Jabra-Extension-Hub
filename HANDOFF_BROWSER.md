@@ -98,3 +98,12 @@ Not done: edge-to-edge, thumbnails are not saved across restarts (placeholder le
 Next: D4 NewTabPage.kt restyle (in zip): big search pill, bookmark tiles with favicons, less clutter (dark only unless asked). Then D5 media sheet (item_media.xml in docs/res_seen), D6 polish.
 Context line: Project: Jabra Hub browser. Mode: MODIFY. Base 0.9.15 (build: yes/no, validator: pass/fail). Done: B0-B2, T0-T3, R1-R4, D0, D1, D2, D3. Next: D4.
 
+
+## 0.9.16 (this zip) - Quiet Pill D4
+Done: D4 new-tab page restyle. Base 0.9.15 (build result of 0.9.14/0.9.15 not reported yet).
+Changed: NewTabPage.kt html() rewritten (big search pill, no Go button, engine name in placeholder; bookmark tiles 56px with favicon = scheme://authority/favicon.ico over a letter, removed by onerror/onload<16px; 8 shown + "Show all" button (max 24); Recent = 4 with small favicon; palette = app colours dark, light via prefers-color-scheme); URL/isNewTab/response untouched. build.gradle.kts 0.9.16 / code 36.
+Checks done: node --check on the page script, CSS and Kotlin brackets balanced. No browser available to render at 360/1280px, so layout is NOT visually checked.
+NOT tested: favicon loading on a real device, light mode look, short screens, 340px grid.
+Next: D5 media sheet: panel in activity_browser.xml (docs/res_seen has item_media.xml) + showPanel() in BrowserActivity.kt; chip floats above the pill, select mode = contextual bar (Copy, Grabber, Done); replace hardcoded accent 0xFF7C8CFF with q_accent.
+Context line: Project: Jabra Hub browser. Mode: MODIFY. Base 0.9.16 (build: yes/no, validator: pass/fail). Done: B0-B2, T0-T3, R1-R4, D0-D4. Next: D5.
+
