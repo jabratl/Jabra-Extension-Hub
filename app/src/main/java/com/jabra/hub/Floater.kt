@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.widget.Toast
+import androidx.core.content.ContextCompat
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import org.json.JSONObject
 import java.io.File
@@ -13,7 +14,7 @@ import java.io.File
 data class FloaterEntry(
     val pluginId: String,
     val pluginName: String,
-    val icon: String,
+    val letter: String,      // first letter of the label, drawn in a round tile (no emoji)
     val label: String,
     val color: Int,
     val source: String,      // "none" or "clipboard"
@@ -23,7 +24,9 @@ data class FloaterEntry(
 
 /**
  * General-purpose floating bubble support. Any plugin can declare in manifest.json:
- *   "floater": { "icon": "🎬", "label": "Grab", "color": "#E85D9A", "source": "clipboard" }
+ *   "floater": { "label": "Grab", "color": "#E85D9A", "source": "clipboard" }
+ * "label" (max 14 characters) names the button and its first letter fills the tile. "color" is optional
+ * (default: the app accent). "icon" is no longer used; an emoji there is ignored.
  * The user decides which plugins appear in the bubble. Tapping a plugin's button opens it
  * and hands over a payload it reads with JabraAPI.floaterGet().
  */
@@ -31,7 +34,6 @@ object Floater {
     private const val PREFS = "hub_prefs"
     private const val KEY = "floater_enabled"
     private const val MAX_CHARS = 3_000_000
-    private const val DEFAULT_COLOR = "#E85D9A"
 
     private fun safe(id: String) = id.replace(Regex("[^A-Za-z0-9_-]"), "_")
 
@@ -40,23 +42,25 @@ object Floater {
         if (f.isFile && f.length() < 200_000) JSONObject(f.readText(Charsets.UTF_8)) else null
     } catch (_: Exception) { null }
 
+    private fun letterOf(s: String): String =
+        s.trim().firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString() ?: "J"
+
     fun entryFor(ctx: Context, id: String): FloaterEntry? {
         val m = manifest(ctx, id) ?: return null
         val name = m.optString("name", id)
+        val accent = ContextCompat.getColor(ctx, R.color.q_accent)
         val fl = m.optJSONObject("floater")
         if (fl == null) {
             // Novel Assistant predates this API, so it keeps its built-in clipboard scan button.
             return if (id == ChapterIntake.NOVEL_PLUGIN_ID)
-                FloaterEntry(id, name, "📖", "Scan", Color.parseColor(DEFAULT_COLOR), "clipboard", false, true)
+                FloaterEntry(id, name, "S", "Scan", accent, "clipboard", false, true)
             else null
         }
         val source = if (fl.optString("source", "none") == "clipboard") "clipboard" else "none"
-        val color = try { Color.parseColor(fl.optString("color", DEFAULT_COLOR)) }
-            catch (_: Exception) { Color.parseColor(DEFAULT_COLOR) }
+        val color = try { Color.parseColor(fl.optString("color", "")) } catch (_: Exception) { accent }
+        val label = fl.optString("label", name).take(14).ifBlank { name.take(14) }
         return FloaterEntry(
-            id, name,
-            fl.optString("icon", "🧩").take(12).ifBlank { "🧩" },
-            fl.optString("label", name).take(14).ifBlank { name.take(14) },
+            id, name, letterOf(label), label,
             color, source, fl.optBoolean("allowEmpty", false), false
         )
     }
@@ -65,7 +69,7 @@ object Floater {
 
     /**
      * Plugins that declare  "share": true  in manifest.json can receive a link from the Android Share sheet
-     * ("Jabra Grab", see ShareActivity). Independent of the bubble: no "floater" block is needed.
+     * ("Jabra" in the Share sheet, see ShareActivity). Independent of the bubble: no "floater" block is needed.
      */
     fun acceptsShare(ctx: Context, id: String): Boolean =
         manifest(ctx, id)?.optBoolean("share", false) == true
