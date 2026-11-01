@@ -19,6 +19,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import androidx.core.graphics.ColorUtils
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -66,7 +67,7 @@ class BubbleService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val b = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, CHANNEL) else Notification.Builder(this)
-        return b.setSmallIcon(R.drawable.ic_add)
+        return b.setSmallIcon(R.drawable.q_ic_add)
             .setContentTitle("Jabra bubble is on")
             .setContentText("Tap the J bubble to use your plugins' buttons.")
             .setOngoing(true)
@@ -82,10 +83,15 @@ class BubbleService : Service() {
         val size = dp(52)
         val b = TextView(this).apply {
             text = "J"
-            setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
             gravity = Gravity.CENTER
-            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#E85D9A")); setStroke(dp(2), Color.WHITE) }
+            setTextColor(Q.color(this@BubbleService, R.color.q_on_accent))
+            contentDescription = "Jabra bubble"
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Q.color(this@BubbleService, R.color.q_accent))
+                setStroke(dp(2), Q.color(this@BubbleService, R.color.q_bg))
+            }
             alpha = 0.92f
             elevation = dp(6).toFloat()
             layoutParams = LinearLayout.LayoutParams(size, size)
@@ -140,15 +146,39 @@ class BubbleService : Service() {
         }
     }
 
-    private fun chip(e: FloaterEntry) = TextView(this).apply {
-        text = "${e.icon}  ${e.label}"
-        setTextColor(Color.WHITE)
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-        gravity = Gravity.CENTER_VERTICAL
-        setPadding(dp(14), 0, dp(14), 0)
-        background = GradientDrawable().apply { cornerRadius = dp(22).toFloat(); setColor(e.color); setStroke(dp(1), Color.WHITE) }
-        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(40)).apply { setMargins(dp(6), dp(5), dp(6), dp(5)) }
-        setOnClickListener { collapse(); Floater.trigger(this@BubbleService, e) }
+    /** Quiet Pill button: surface pill with a round letter tile in the plugin's colour. */
+    private fun chip(e: FloaterEntry): View {
+        val tile = TextView(this).apply {
+            text = e.letter
+            gravity = Gravity.CENTER
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(if (ColorUtils.calculateLuminance(e.color) > 0.5) Color.BLACK else Color.WHITE)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(e.color) }
+            layoutParams = LinearLayout.LayoutParams(dp(32), dp(32))
+        }
+        val label = TextView(this).apply {
+            text = e.label
+            setTextColor(Q.color(this@BubbleService, R.color.q_text))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setPadding(dp(10), 0, dp(6), 0)
+        }
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8), 0, dp(12), 0)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(24).toFloat()
+                setColor(Q.color(this@BubbleService, R.color.q_surface_hi))
+                setStroke(dp(1), Q.color(this@BubbleService, R.color.q_outline))
+            }
+            contentDescription = e.label
+            addView(tile)
+            addView(label)
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(48)).apply { setMargins(dp(6), dp(4), dp(6), dp(4)) }
+            setOnClickListener { collapse(); Floater.trigger(this@BubbleService, e) }
+        }
     }
 
     private fun expand(list: List<FloaterEntry>) {
