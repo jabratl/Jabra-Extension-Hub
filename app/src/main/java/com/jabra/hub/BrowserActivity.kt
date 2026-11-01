@@ -1358,13 +1358,29 @@ class BrowserActivity : AppCompatActivity() {
     private fun toggleDesktopSite(pageUrl: String) {
         val host = BrowserStore.siteKey(Uri.parse(pageUrl).host)
         if (host.isEmpty()) {
-            Toast.makeText(this, "Open a page first (or use Page tools -> Desktop for all sites)", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Open a page first (or use Menu > Site settings for all sites)", Toast.LENGTH_LONG).show()
             return
         }
         val now = !desktopFor(host)
         desktopSites = BrowserStore.setDesktopSite(this, host, now, desktop)
         curTab?.let { syncDesktop(it) }
         Toast.makeText(this, "Desktop site " + (if (now) "on" else "off") + " for " + host, Toast.LENGTH_SHORT).show()
+        web.reload()
+    }
+
+    /** The switches for all sites. They live in Site settings; the Ad block and Desktop buttons are for the page you are on. */
+    private fun toggleAdblockAll() {
+        adblock = !adblock
+        BrowserStore.setAdblock(this, adblock)
+        Toast.makeText(this, if (adblock) "Ad blocker on for all sites" else "Ad blocker off for all sites", Toast.LENGTH_SHORT).show()
+        web.reload()
+    }
+
+    private fun toggleDesktopAll() {
+        desktop = !desktop
+        BrowserStore.setDesktop(this, desktop)
+        applyDesktopAll()
+        Toast.makeText(this, if (desktop) "Desktop mode on for all sites" else "Desktop mode off for all sites", Toast.LENGTH_SHORT).show()
         web.reload()
     }
 
@@ -1375,7 +1391,7 @@ class BrowserActivity : AppCompatActivity() {
             return
         }
         if (!adblock) {
-            Toast.makeText(this, "The ad blocker is off for all sites. Turn it on in the menu first.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "The ad blocker is off for all sites. Turn it on in Menu > Site settings first.", Toast.LENGTH_LONG).show()
             return
         }
         val allowNow = !siteAllowed(host)
@@ -1384,31 +1400,42 @@ class BrowserActivity : AppCompatActivity() {
         web.reload()
     }
 
-    /** Lists the sites with their own settings; tap one to remove its setting. */
+    /** Ad blocker and desktop mode: the switches for all sites first, then the sites with their own setting (tap one to reset it). */
     private fun showSiteSettings() {
         val items = ArrayList<String>()
-        val acts = ArrayList<() -> Unit>()
+        val acts = ArrayList<(() -> Unit)?>()
+        items.add("Ad blocker, all sites: " + (if (adblock) "on  (tap to turn off)" else "off  (tap to turn on)"))
+        acts.add { toggleAdblockAll() }
+        items.add("Desktop mode, all sites: " + (if (desktop) "on  (tap to turn off)" else "off  (tap to turn on)"))
+        acts.add { toggleDesktopAll() }
+        if (adblock) {
+            items.add("Blocked $blockedCount on this page")
+            acts.add(null)
+        }
+        if (allowHosts.isEmpty() && desktopSites.isEmpty()) {
+            items.add("No site has its own setting yet. Use the Ad block and Desktop buttons while you are on a page.")
+            acts.add(null)
+        }
         for (h in allowHosts.sorted()) {
             items.add("Ads allowed: $h  (tap to block again)")
-            acts.add { allowHosts = BrowserStore.setAdblockAllowed(this, h, false) }
+            acts.add {
+                allowHosts = BrowserStore.setAdblockAllowed(this, h, false)
+                Toast.makeText(this, "Reset", Toast.LENGTH_SHORT).show()
+            }
         }
         for ((h, on) in desktopSites.toSortedMap()) {
             items.add("Desktop " + (if (on) "on" else "off") + ": $h  (tap to reset)")
             acts.add {
                 desktopSites = BrowserStore.removeDesktopSite(this, h)
                 applyDesktopAll()
-            }
-        }
-        val b = MaterialAlertDialogBuilder(this).setTitle("Site settings")
-        if (items.isEmpty()) {
-            b.setMessage("No site has its own setting yet.\n\nMenu -> Page tools -> Ad blocker on this site, or the Desktop site entry, sets one for the page you are on.")
-        } else {
-            b.setItems(items.toTypedArray()) { _, i ->
-                acts[i]()
                 Toast.makeText(this, "Reset", Toast.LENGTH_SHORT).show()
             }
         }
-        b.setNegativeButton("Close", null).show()
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Site settings")
+            .setItems(items.toTypedArray()) { _, i -> acts[i]?.invoke() }
+            .setNegativeButton("Close", null)
+            .show()
     }
 
     private fun goBack() {
@@ -1480,7 +1507,7 @@ class BrowserActivity : AppCompatActivity() {
         quickBtn(R.drawable.q_ic_share, "Share", false, false, 9)
         quickBtn(R.drawable.q_ic_search, "Find", false, false, 23)
         quickBtn(R.drawable.q_ic_dark, "Dark", darkPage, true, 25)
-        quickBtn(R.drawable.q_ic_shield, "Ad block", adblock, true, 6)
+        quickBtn(R.drawable.q_ic_shield, "Ad block", adblock && !siteAllowed(pageHost), true, 28)
         quickBtn(R.drawable.q_ic_desktop, "Desktop", desktopFor(pageHost), true, 7)
 
         // Compact list below (no submenus).
@@ -1544,7 +1571,6 @@ class BrowserActivity : AppCompatActivity() {
         }
 
         divider()
-        item(R.drawable.q_ic_tabs, "Tabs", "${tabs.size} open", null, 20)
         item(R.drawable.q_ic_add, "New tab", null, null, 21)
         item(R.drawable.q_ic_bookmark, "Bookmarks", null, null, 2)
         item(R.drawable.q_ic_history, "History", null, null, 3)
@@ -1555,16 +1581,14 @@ class BrowserActivity : AppCompatActivity() {
         item(R.drawable.q_ic_refresh, "Reload", null, null, 5)
         item(R.drawable.q_ic_copy, "Copy link", null, null, 10)
         item(R.drawable.q_ic_text_size, "Text size", BrowserStore.textZoom(this).toString() + "%", null, 24)
-        item(R.drawable.q_ic_search, "Search engine", BrowserStore.engine(this).name, null, 22)
         item(R.drawable.q_ic_download, "Save page (PDF / archive)", null, null, 26)
         divider()
+        item(R.drawable.q_ic_globe, "Search engine", BrowserStore.engine(this).name, null, 22)
         item(
-            R.drawable.q_ic_shield, "Ad blocker on this site",
-            if (adblock) "Blocked $blockedCount on this page" else "Off for all sites",
-            adblock && !siteAllowed(pageHost), 28
+            R.drawable.q_ic_tune, "Site settings",
+            "All sites: ad blocker " + (if (adblock) "on" else "off") + ", desktop " + (if (desktop) "on" else "off"),
+            null, 29
         )
-        item(R.drawable.q_ic_desktop, "Desktop for all sites", null, desktop, 27)
-        item(R.drawable.q_ic_tune, "Site settings", "Allowed sites and desktop sites", null, 29)
         item(R.drawable.q_ic_history, "Save history", null, BrowserStore.saveHistory(this), 8)
         divider()
         item(R.drawable.q_ic_bookmark, "Bookmarks: export / import", null, null, 13)
@@ -1596,19 +1620,9 @@ class BrowserActivity : AppCompatActivity() {
             3 -> showManager(false)
             4 -> if (web.canGoForward()) web.goForward()
             5 -> web.reload()
-            6 -> {
-                adblock = !adblock
-                BrowserStore.setAdblock(this, adblock)
-                Toast.makeText(this, if (adblock) "Ad blocker on" else "Ad blocker off", Toast.LENGTH_SHORT).show()
-                web.reload()
-            }
+            6 -> toggleAdblockAll()
             7 -> toggleDesktopSite(pageUrl)
-            27 -> {
-                desktop = !desktop
-                BrowserStore.setDesktop(this, desktop)
-                applyDesktopAll()
-                web.reload()
-            }
+            27 -> toggleDesktopAll()
             28 -> toggleSiteAds(pageUrl)
             29 -> showSiteSettings()
             8 -> BrowserStore.setSaveHistory(this, !BrowserStore.saveHistory(this))
