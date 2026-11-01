@@ -19,6 +19,8 @@ import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.atomic.AtomicInteger
+import org.json.JSONArray
+import org.json.JSONObject
 import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
@@ -48,17 +50,75 @@ class DlJob(val id: Int, val title: String, val kind: String) {
     @Volatile var uri: String = ""
     @Volatile var mime: String = ""
     @Volatile var cancelled: Boolean = false
+    @Volatile var ts: Long = System.currentTimeMillis()
     val active: Boolean get() = state == "queued" || state == "running"
 }
 
 object DlJobs {
     private val list = CopyOnWriteArrayList<DlJob>()
     private val seq = AtomicInteger(0)
+    private var appCtx: Context? = null
+    private var loaded = false
+    private const val PREFS = "dl_history"
+    private const val KEEP = 100
+
+    /** Loads the list kept from earlier runs (Hub 0.9.12). Call once; later calls do nothing. */
+    @Synchronized
+    fun init(ctx: Context) {
+        if (loaded) return
+        loaded = true
+        val c = ctx.applicationContext
+        appCtx = c
+        try {
+            val arr = JSONArray(c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("jobs", "[]") ?: "[]")
+            var maxId = seq.get()
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val j = DlJob(o.optInt("id"), o.optString("title"), o.optString("kind"))
+                var st = o.optString("state", "failed")
+                if (st == "queued" || st == "running") {
+                    // The app was closed while it ran: nothing is running now.
+                    st = "failed"
+                    j.text = "Interrupted (the app was closed)"
+                } else {
+                    j.text = o.optString("text")
+                }
+                j.state = st
+                j.percent = o.optInt("percent", -1)
+                j.where = o.optString("where")
+                j.uri = o.optString("uri")
+                j.mime = o.optString("mime")
+                j.ts = o.optLong("ts", System.currentTimeMillis())
+                list.add(j)
+                if (j.id > maxId) maxId = j.id
+            }
+            seq.set(maxId)
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Writes the list to app-private preferences so it survives a restart. */
+    @Synchronized
+    fun save() {
+        val c = appCtx ?: return
+        try {
+            val arr = JSONArray()
+            for (j in list.take(KEEP)) {
+                arr.put(
+                    JSONObject().put("id", j.id).put("title", j.title).put("kind", j.kind).put("state", j.state)
+                        .put("text", j.text.take(300)).put("percent", j.percent).put("where", j.where)
+                        .put("uri", j.uri).put("mime", j.mime).put("ts", j.ts)
+                )
+            }
+            c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("jobs", arr.toString()).apply()
+        } catch (_: Exception) {
+        }
+    }
 
     fun create(title: String, kind: String): DlJob {
         val j = DlJob(seq.incrementAndGet(), title, kind)
         list.add(0, j)
-        while (list.size > 100) {
+        while (list.size > KEEP) {
             val last = list[list.size - 1]
             if (last.active) break
             list.remove(last)
@@ -68,7 +128,10 @@ object DlJobs {
 
     fun all(): List<DlJob> = list.toList()
     fun activeCount(): Int = list.count { it.active }
-    fun clearFinished() { list.removeAll { !it.active } }
+    fun clearFinished() {
+        list.removeAll { !it.active }
+        save()
+    }
 }
 
 object MediaKind {
@@ -93,6 +156,8 @@ object MediaKind {
 
 class Downloader(private val ctx: Context) {
 
+    init { DlJobs.init(ctx) }
+
     private class Out(val stream: OutputStream, val finish: () -> Unit, val cancel: () -> Unit, val uri: String)
     private class Seg(val url: String, val dur: Double, val key: String?, val iv: ByteArray?, val seq: Long)
     private class Parsed(val segs: List<Seg>, val initUri: String?)
@@ -104,6 +169,7 @@ class Downloader(private val ctx: Context) {
     fun start(m: Media, ua: String, opts: DlOptions = DlOptions(), onUpdate: (String, Boolean) -> Unit): DlJob {
         val shown = m.title.ifBlank { (Uri.parse(m.url).lastPathSegment ?: m.url) }
         val job = DlJobs.create(shown.take(100), m.kind)
+        DlJobs.save()
         pool.execute {
             if (job.cancelled) {
                 job.state = "cancelled"
@@ -136,6 +202,7 @@ class Downloader(private val ctx: Context) {
                     DownloadService.end(ctx)
                 }
             }
+            DlJobs.save()
         }
         return job
     }

@@ -248,6 +248,66 @@ object BrowserStore {
     fun darkPage(ctx: Context) = sp(ctx).getBoolean("dark_page", false)
     fun setDarkPage(ctx: Context, on: Boolean) { sp(ctx).edit().putBoolean("dark_page", on).apply() }
 
+    // ---------- per-site settings (Hub 0.9.12): ad-block allow-list, desktop site per site ----------
+    private const val MAX_SITES = 300
+
+    fun siteKey(host: String?): String = (host ?: "").lowercase().removePrefix("www.")
+
+    fun adblockAllowed(ctx: Context): Set<String> {
+        val out = LinkedHashSet<String>()
+        try {
+            val arr = JSONArray(sp(ctx).getString("adblock_allow", "[]") ?: "[]")
+            for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotBlank() }?.let { out.add(it) }
+        } catch (_: Exception) {
+        }
+        return out
+    }
+
+    /** allowed = true: stop blocking ads on this site. false: block again (also removes a parent domain that allowed it). */
+    fun setAdblockAllowed(ctx: Context, host: String, allowed: Boolean): Set<String> {
+        val h = siteKey(host)
+        val set = LinkedHashSet(adblockAllowed(ctx))
+        if (allowed) { if (h.isNotEmpty() && set.size < MAX_SITES) set.add(h) }
+        else set.removeAll { h == it || h.endsWith(".$it") }
+        val arr = JSONArray()
+        for (x in set) arr.put(x)
+        sp(ctx).edit().putString("adblock_allow", arr.toString()).apply()
+        return set
+    }
+
+    /** host -> true (desktop) / false (mobile) when it differs from the global switch. */
+    fun desktopSites(ctx: Context): Map<String, Boolean> {
+        val out = LinkedHashMap<String, Boolean>()
+        try {
+            val o = JSONObject(sp(ctx).getString("desktop_sites", "{}") ?: "{}")
+            for (k in o.keys()) out[k] = o.optBoolean(k)
+        } catch (_: Exception) {
+        }
+        return out
+    }
+
+    private fun saveDesktopSites(ctx: Context, m: Map<String, Boolean>) {
+        val o = JSONObject()
+        for ((k, v) in m) o.put(k, v)
+        sp(ctx).edit().putString("desktop_sites", o.toString()).apply()
+    }
+
+    fun setDesktopSite(ctx: Context, host: String, on: Boolean, globalDesktop: Boolean): Map<String, Boolean> {
+        val h = siteKey(host)
+        val m = LinkedHashMap(desktopSites(ctx))
+        if (h.isEmpty()) return m
+        if (on == globalDesktop) m.remove(h) else if (m.size < MAX_SITES || m.containsKey(h)) m[h] = on
+        saveDesktopSites(ctx, m)
+        return m
+    }
+
+    fun removeDesktopSite(ctx: Context, host: String): Map<String, Boolean> {
+        val m = LinkedHashMap(desktopSites(ctx))
+        m.remove(siteKey(host))
+        saveDesktopSites(ctx, m)
+        return m
+    }
+
     // ---------- saved tabs (Hub 0.9.8): addresses of the open tabs, restored at the next start ----------
     private const val TABS = "tabs"
     private const val MAX_TABS = 8

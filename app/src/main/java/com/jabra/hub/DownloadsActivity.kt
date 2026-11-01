@@ -16,7 +16,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 
-/** Lists the downloads of this app session with progress, cancel and play. Built in code (no layout file). */
+/** Lists the downloads (kept after a restart since Hub 0.9.12) with progress, cancel and play. Built in code (no layout file). */
 class DownloadsActivity : AppCompatActivity() {
 
     private lateinit var list: LinearLayout
@@ -33,6 +33,7 @@ class DownloadsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        DlJobs.init(applicationContext)
         val root = LinearLayout(this)
         root.orientation = LinearLayout.VERTICAL
         root.setBackgroundColor(getColor(R.color.br_bg))

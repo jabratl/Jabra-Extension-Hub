@@ -61,6 +61,9 @@ class BrowserActivity : AppCompatActivity() {
         /** Address restored from the last session; loaded the first time the tab is shown. */
         var pending: String? = null
         var savedTitle: String = ""
+        /** Site of the page being loaded (for per-site ad blocking and desktop mode). */
+        @Volatile var pageHost: String? = null
+        var desktopOn: Boolean = false
     }
 
     private val tabs = ArrayList<Tab>()
@@ -100,6 +103,9 @@ class BrowserActivity : AppCompatActivity() {
 
     private var adblock = true
     private var desktop = false
+    // per-site settings (Hub 0.9.12)
+    @Volatile private var allowHosts: Set<String> = emptySet()
+    @Volatile private var desktopSites: Map<String, Boolean> = emptyMap()
     private var blockedCount = 0
     private var defaultUa = ""
 
@@ -132,12 +138,12 @@ class BrowserActivity : AppCompatActivity() {
             var k = kindLoose(u)
             if (k == null && hint == "av") k = "video"
             if (k == null) return
-            if (adblock && AdBlock.isBlocked(u, Uri.parse(u).host)) return
+            if (adblockOn(tab) && AdBlock.isBlocked(u, Uri.parse(u).host)) return
             onFound(tab, u, k)
         }
 
         @JavascriptInterface
-        fun adblock(): Boolean = this@BrowserActivity.adblock
+        fun adblock(): Boolean = adblockOn(tab)
     }
 
     private fun kindLoose(u: String): String? =
@@ -150,6 +156,8 @@ class BrowserActivity : AppCompatActivity() {
         downloader = Downloader(applicationContext)
         adblock = BrowserStore.adblock(this)
         desktop = BrowserStore.desktop(this)
+        allowHosts = BrowserStore.adblockAllowed(this)
+        desktopSites = BrowserStore.desktopSites(this)
         darkPage = BrowserStore.darkPage(this)
 
         val first = Tab(findViewById(R.id.web))
@@ -231,7 +239,8 @@ class BrowserActivity : AppCompatActivity() {
         t.web.settings.builtInZoomControls = true
         t.web.settings.displayZoomControls = false
         if (defaultUa.isEmpty()) defaultUa = t.web.settings.userAgentString
-        applyDesktop(t.web)
+        t.desktopOn = desktop
+        applyDesktop(t.web, desktop)
         t.web.settings.textZoom = BrowserStore.textZoom(this)
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(t.web, true)
@@ -255,7 +264,7 @@ class BrowserActivity : AppCompatActivity() {
 
             override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
                 // Pop-ups / pop-unders the user did not ask for are dropped.
-                if (adblock && !isUserGesture) {
+                if (adblockOn(t) && !isUserGesture) {
                     blockedCount++
                     return false
                 }
@@ -265,10 +274,10 @@ class BrowserActivity : AppCompatActivity() {
                     override fun shouldOverrideUrlLoading(v: WebView, request: WebResourceRequest): Boolean {
                         val u = request.url.toString()
                         if ((u.startsWith("http://") || u.startsWith("https://")) &&
-                            !(adblock && AdBlock.isAdHost(request.url.host))
+                            !(adblockOn(t) && AdBlock.isAdHost(request.url.host))
                         ) {
                             t.web.post { if (!newTab(u)) t.web.loadUrl(u) }
-                        } else if (adblock) {
+                        } else if (adblockOn(t)) {
                             blockedCount++
                         }
                         t.web.post { temp.destroy() }
@@ -324,7 +333,8 @@ class BrowserActivity : AppCompatActivity() {
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
                 if (NewTabPage.isNewTab(request.url.toString())) return NewTabPage.response(this@BrowserActivity, request.url)
                 val u = request.url.toString()
-                if (adblock && !request.isForMainFrame && AdBlock.isBlocked(u, request.url.host)) {
+                if (request.isForMainFrame) t.pageHost = request.url.host
+                if (adblockOn(t) && !request.isForMainFrame && AdBlock.isBlocked(u, request.url.host)) {
                     blockedCount++
                     return AdBlock.empty()
                 }
@@ -338,14 +348,21 @@ class BrowserActivity : AppCompatActivity() {
                 // intent:, market:, custom app schemes: stay in the page instead of showing an error.
                 if (scheme != "http" && scheme != "https") return true
                 // Automatic redirects to ad networks (no tap involved).
-                if (adblock && !request.hasGesture() && AdBlock.isAdHost(request.url.host)) {
+                if (adblockOn(t) && !request.hasGesture() && AdBlock.isAdHost(request.url.host)) {
                     blockedCount++
                     return true
+                }
+                if (request.isForMainFrame) {
+                    t.pageHost = request.url.host
+                    syncDesktop(t)
                 }
                 return false
             }
 
             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+                t.pageHost = Uri.parse(url).host
+                // Redirects and typed addresses: switch the browser identity for this site and load it again once.
+                if (!NewTabPage.isNewTab(url) && syncDesktop(t)) view.post { view.reload() }
                 t.found.clear()
                 blockedCount = 0
                 if (t === curTab) {
@@ -388,14 +405,36 @@ class BrowserActivity : AppCompatActivity() {
         }
     }
 
-    private fun applyDesktop(w: WebView) {
-        w.settings.userAgentString = if (desktop) desktopUa else defaultUa
-        w.settings.useWideViewPort = desktop
-        w.settings.loadWithOverviewMode = desktop
+    private fun applyDesktop(w: WebView, on: Boolean) {
+        w.settings.userAgentString = if (on) desktopUa else defaultUa
+        w.settings.useWideViewPort = on
+        w.settings.loadWithOverviewMode = on
+    }
+
+    // ---------- per-site ad blocker and desktop mode (Hub 0.9.12) ----------
+
+    private fun siteAllowed(host: String?): Boolean {
+        val h = BrowserStore.siteKey(host)
+        if (h.isEmpty()) return false
+        return allowHosts.any { h == it || h.endsWith(".$it") }
+    }
+
+    /** Ad blocker state for one tab: the global switch, unless the site is on the allow-list. */
+    private fun adblockOn(t: Tab?): Boolean = adblock && !siteAllowed(t?.pageHost)
+
+    private fun desktopFor(host: String?): Boolean = desktopSites[BrowserStore.siteKey(host)] ?: desktop
+
+    /** Sets the tab's user agent to what its site needs. Returns true when it changed (the page must be loaded again). */
+    private fun syncDesktop(t: Tab): Boolean {
+        val want = desktopFor(t.pageHost ?: Uri.parse(t.web.url ?: "").host)
+        if (want == t.desktopOn) return false
+        t.desktopOn = want
+        applyDesktop(t.web, want)
+        return true
     }
 
     private fun applyDesktopAll() {
-        for (t in tabs) applyDesktop(t.web)
+        for (t in tabs) syncDesktop(t)
     }
 
     // ---------- tabs (Hub 0.9.7): only the current tab's WebView is attached; the others are paused ----------
@@ -854,6 +893,62 @@ class BrowserActivity : AppCompatActivity() {
         }
     }
 
+    private fun toggleDesktopSite(pageUrl: String) {
+        val host = BrowserStore.siteKey(Uri.parse(pageUrl).host)
+        if (host.isEmpty()) {
+            Toast.makeText(this, "Open a page first (or use Page tools -> Desktop for all sites)", Toast.LENGTH_LONG).show()
+            return
+        }
+        val now = !desktopFor(host)
+        desktopSites = BrowserStore.setDesktopSite(this, host, now, desktop)
+        curTab?.let { syncDesktop(it) }
+        Toast.makeText(this, "Desktop site " + (if (now) "on" else "off") + " for " + host, Toast.LENGTH_SHORT).show()
+        web.reload()
+    }
+
+    private fun toggleSiteAds(pageUrl: String) {
+        val host = BrowserStore.siteKey(Uri.parse(pageUrl).host)
+        if (host.isEmpty()) {
+            Toast.makeText(this, "Open a page first", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (!adblock) {
+            Toast.makeText(this, "The ad blocker is off for all sites. Turn it on in the menu first.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val allowNow = !siteAllowed(host)
+        allowHosts = BrowserStore.setAdblockAllowed(this, host, allowNow)
+        Toast.makeText(this, if (allowNow) "Ads allowed on $host" else "Ad blocker on again for $host", Toast.LENGTH_SHORT).show()
+        web.reload()
+    }
+
+    /** Lists the sites with their own settings; tap one to remove its setting. */
+    private fun showSiteSettings() {
+        val items = ArrayList<String>()
+        val acts = ArrayList<() -> Unit>()
+        for (h in allowHosts.sorted()) {
+            items.add("Ads allowed: $h  (tap to block again)")
+            acts.add { allowHosts = BrowserStore.setAdblockAllowed(this, h, false) }
+        }
+        for ((h, on) in desktopSites.toSortedMap()) {
+            items.add("Desktop " + (if (on) "on" else "off") + ": $h  (tap to reset)")
+            acts.add {
+                desktopSites = BrowserStore.removeDesktopSite(this, h)
+                applyDesktopAll()
+            }
+        }
+        val b = MaterialAlertDialogBuilder(this).setTitle("Site settings")
+        if (items.isEmpty()) {
+            b.setMessage("No site has its own setting yet.\n\nMenu -> Page tools -> Ad blocker on this site, or the Desktop site entry, sets one for the page you are on.")
+        } else {
+            b.setItems(items.toTypedArray()) { _, i ->
+                acts[i]()
+                Toast.makeText(this, "Reset", Toast.LENGTH_SHORT).show()
+            }
+        }
+        b.setNegativeButton("Close", null).show()
+    }
+
     private fun goBack() {
         val cur = curTab
         if (web.canGoBack()) web.goBack()
@@ -869,6 +964,7 @@ class BrowserActivity : AppCompatActivity() {
             t.contains(" ") || !t.contains(".") -> BrowserStore.searchUrl(this, t)
             else -> "https://$t"
         }
+        curTab?.let { it.pageHost = Uri.parse(target).host; syncDesktop(it) }
         web.loadUrl(target)
     }
 
@@ -892,14 +988,21 @@ class BrowserActivity : AppCompatActivity() {
         dp.isCheckable = true
         dp.isChecked = darkPage
         pt.add(0, 26, 3, "Save page (PDF / archive)")
+        val siteAds = pt.add(0, 28, 4, "Ad blocker on this site")
+        siteAds.isCheckable = true
+        siteAds.isChecked = adblock && !siteAllowed(Uri.parse(pageUrl).host)
+        val allDesk = pt.add(0, 27, 5, "Desktop for all sites")
+        allDesk.isCheckable = true
+        allDesk.isChecked = desktop
+        pt.add(0, 29, 6, "Site settings (allowed / desktop)")
         m.menu.add(0, 4, 3, "Forward")
         m.menu.add(0, 5, 4, "Reload")
         val ab = m.menu.add(0, 6, 5, "Ad blocker" + if (adblock) " (blocked $blockedCount)" else "")
         ab.isCheckable = true
         ab.isChecked = adblock
-        val dk = m.menu.add(0, 7, 6, "Desktop site")
+        val dk = m.menu.add(0, 7, 6, "Desktop site (this site)")
         dk.isCheckable = true
-        dk.isChecked = desktop
+        dk.isChecked = desktopFor(Uri.parse(pageUrl).host)
         val sh = m.menu.add(0, 8, 7, "Save history")
         sh.isCheckable = true
         sh.isChecked = BrowserStore.saveHistory(this)
@@ -924,12 +1027,15 @@ class BrowserActivity : AppCompatActivity() {
                     Toast.makeText(this, if (adblock) "Ad blocker on" else "Ad blocker off", Toast.LENGTH_SHORT).show()
                     web.reload()
                 }
-                7 -> {
+                7 -> toggleDesktopSite(pageUrl)
+                27 -> {
                     desktop = !desktop
                     BrowserStore.setDesktop(this, desktop)
                     applyDesktopAll()
                     web.reload()
                 }
+                28 -> toggleSiteAds(pageUrl)
+                29 -> showSiteSettings()
                 8 -> BrowserStore.setSaveHistory(this, !BrowserStore.saveHistory(this))
                 9 -> if (pageUrl.isNotEmpty()) {
                     val i = Intent(Intent.ACTION_SEND).setType("text/plain")
