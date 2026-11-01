@@ -2174,8 +2174,17 @@ class BrowserActivity : AppCompatActivity() {
             allBtn.isClickable = true
             val copy = iconBtn(R.drawable.q_ic_copy, "Copy links") { copyLinks(targets()) }
             val send = iconBtn(R.drawable.q_ic_share, "Send to Media Grabber") { sendToGrabber(targets()) }
-            val dl = chipBtn("Download", R.drawable.q_ic_download, true) { downloadSelected(targets()) }
-            dl.setPadding(dp(8), 0, dp(12), 0)
+            // Narrow screens (about 360-410dp): Download is an icon, so the "N selected" count keeps room to show.
+            val compact = resources.configuration.screenWidthDp < 440
+            val dl: View = if (compact) {
+                iconBtn(R.drawable.q_ic_download, "Download selected") { downloadSelected(targets()) }.also {
+                    it.imageTintList = ColorStateList.valueOf(Q.color(this, R.color.q_accent_text))
+                }
+            } else {
+                chipBtn("Download", R.drawable.q_ic_download, true) { downloadSelected(targets()) }.also {
+                    it.setPadding(dp(8), 0, dp(12), 0)
+                }
+            }
             fun refresh() {
                 val n = targets().size
                 count.text = if (n == 0) "Select items" else "$n selected"
@@ -2196,7 +2205,7 @@ class BrowserActivity : AppCompatActivity() {
             ctx.addView(allBtn)
             ctx.addView(copy, LinearLayout.LayoutParams(dp(48), dp(48)))
             ctx.addView(send, LinearLayout.LayoutParams(dp(48), dp(48)))
-            ctx.addView(dl)
+            if (compact) ctx.addView(dl, LinearLayout.LayoutParams(dp(48), dp(48))) else ctx.addView(dl)
             panelBar.addView(ctx, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             selectRefresh = { refresh() }
             refresh()
