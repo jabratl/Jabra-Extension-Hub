@@ -1,19 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Quiet Pill design tokens (v0.9.13, step D0). Light values. New names only (q_*); br_* untouched. -->
+<!-- Quiet Pill tokens. The app theme is fixed dark (Theme.Material3.Dark), so these are the dark values in values/. Same palette as br_*; accent = app accent #FF8A5B. -->
 <resources>
-    <color name="q_bg">#FFFAFAFC</color>
-    <color name="q_surface">#FFFFFFFF</color>
-    <color name="q_surface_hi">#FFF0F1F6</color>
-    <color name="q_outline">#FFD9DBE5</color>
-    <color name="q_text">#FF15161C</color>
-    <color name="q_text_sub">#FF5B5F70</color>
-    <color name="q_icon">#FF2A2C36</color>
-    <color name="q_accent">#FF7C8CFF</color>
-    <color name="q_accent_text">#FF3F4FC9</color>
-    <color name="q_accent_container">#FFE1E4FF</color>
-    <color name="q_on_accent">#FF0E1020</color>
-    <color name="q_danger">#FFB3261E</color>
-    <color name="q_scrim">#66000000</color>
+    <color name="q_bg">#FF141629</color>
+    <color name="q_surface">#FF1B1E38</color>
+    <color name="q_surface_hi">#FF222648</color>
+    <color name="q_outline">#FF30356B</color>
+    <color name="q_text">#FFF4F4FF</color>
+    <color name="q_text_sub">#FFA3A8D6</color>
+    <color name="q_icon">#FFF4F4FF</color>
+    <color name="q_accent">#FFFF8A5B</color>
+    <color name="q_accent_text">#FFFF8A5B</color>
+    <color name="q_accent_container">#FF3A2A3C</color>
+    <color name="q_on_accent">#FF1A1020</color>
+    <color name="q_danger">#FFFF8DA1</color>
+    <color name="q_scrim">#99000000</color>
 
     <dimen name="q_pill_radius">28dp</dimen>
     <dimen name="q_card_radius">16dp</dimen>

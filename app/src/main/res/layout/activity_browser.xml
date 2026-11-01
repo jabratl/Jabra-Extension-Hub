@@ -1,77 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Quiet Pill (0.9.14): page on top, floating address pill at the bottom. Ids kept: web chip panel panelList panelClose progress url menu. Removed: back, close. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/br_bg"
     android:orientation="vertical">
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="@color/br_surface"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:padding="8dp">
-
-        <TextView
-            android:id="@+id/back"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:gravity="center"
-            android:text="‹"
-            android:textColor="@color/br_text"
-            android:textSize="28sp" />
-
-        <EditText
-            android:id="@+id/url"
-            android:layout_width="0dp"
-            android:layout_height="42dp"
-            android:layout_marginStart="4dp"
-            android:layout_marginEnd="4dp"
-            android:layout_weight="1"
-            android:background="@drawable/br_chip"
-            android:hint="Search or type a web address"
-            android:imeOptions="actionGo"
-            android:importantForAutofill="no"
-            android:inputType="textUri"
-            android:maxLines="1"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
-            android:selectAllOnFocus="true"
-            android:textColor="@color/br_text"
-            android:textColorHint="@color/br_sub"
-            android:textSize="14sp" />
-
-        <TextView
-            android:id="@+id/menu"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:gravity="center"
-            android:text="⋮"
-            android:textColor="@color/br_text"
-            android:textSize="22sp" />
-
-        <TextView
-            android:id="@+id/close"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:gravity="center"
-            android:text="✕"
-            android:textColor="@color/br_sub"
-            android:textSize="18sp" />
-    </LinearLayout>
-
-    <ProgressBar
-        android:id="@+id/progress"
-        style="?android:attr/progressBarStyleHorizontal"
-        android:layout_width="match_parent"
-        android:layout_height="3dp"
-        android:max="100"
-        android:progressTint="@color/br_accent"
-        android:visibility="gone" />
 
     <FrameLayout
         android:layout_width="match_parent"
@@ -149,5 +82,132 @@
                     android:paddingBottom="16dp" />
             </ScrollView>
         </LinearLayout>
+
+        <!-- Address suggestions: sit right above the pill (rows are built in code). -->
+        <ScrollView
+            android:id="@+id/suggest"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="12dp"
+            android:layout_marginBottom="4dp"
+            android:background="@drawable/q_card"
+            android:overScrollMode="never"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/suggestList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+        </ScrollView>
+    </FrameLayout>
+
+    <!-- Fixed height (72dp = 56dp pill + 8dp above and below) so the page never resizes when the pill shrinks. -->
+    <FrameLayout
+        android:id="@+id/pillWrap"
+        android:layout_width="match_parent"
+        android:layout_height="72dp"
+        android:focusableInTouchMode="true"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp">
+
+        <LinearLayout
+            android:id="@+id/pill"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_gravity="center_horizontal|bottom"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="12dp"
+            android:background="@drawable/q_pill"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp">
+
+            <ImageView
+                android:id="@+id/secure"
+                android:layout_width="40dp"
+                android:layout_height="match_parent"
+                android:contentDescription="Search"
+                android:scaleType="center"
+                android:src="@drawable/q_ic_search" />
+
+            <EditText
+                android:id="@+id/url"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:background="@null"
+                android:hint="Search or type a web address"
+                android:imeOptions="actionGo"
+                android:importantForAutofill="no"
+                android:inputType="textUri"
+                android:maxLines="1"
+                android:selectAllOnFocus="true"
+                android:textColor="@color/q_text"
+                android:textColorHint="@color/q_text_sub"
+                android:textSize="15sp" />
+
+            <ImageView
+                android:id="@+id/clearUrl"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Clear address"
+                android:scaleType="center"
+                android:src="@drawable/q_ic_close"
+                android:visibility="gone" />
+
+            <FrameLayout
+                android:id="@+id/tabsBtn"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Tabs">
+
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_gravity="center"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/q_ic_tabs" />
+
+                <TextView
+                    android:id="@+id/tabCount"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:importantForAccessibility="no"
+                    android:text="1"
+                    android:textColor="@color/q_text"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+            </FrameLayout>
+
+            <ImageView
+                android:id="@+id/menu"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="More options"
+                android:scaleType="center"
+                android:src="@drawable/q_ic_more" />
+        </LinearLayout>
+
+        <!-- Loading progress: thin rounded bar on the bottom edge of the pill. -->
+        <ProgressBar
+            android:id="@+id/progress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="3dp"
+            android:layout_gravity="bottom"
+            android:layout_marginStart="36dp"
+            android:layout_marginEnd="36dp"
+            android:indeterminate="false"
+            android:max="100"
+            android:progressDrawable="@drawable/q_progress"
+            android:visibility="gone" />
     </FrameLayout>
 </LinearLayout>

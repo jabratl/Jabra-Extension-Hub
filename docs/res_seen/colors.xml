@@ -1,0 +1,11 @@
+<resources>
+    <color name="bg">#141629</color>
+    <color name="surface">#1B1E38</color>
+    <color name="card">#222648</color>
+    <color name="stroke">#30356B</color>
+    <color name="accent">#FF8A5B</color>
+    <color name="teal">#5EEAD4</color>
+    <color name="text">#F4F4FF</color>
+    <color name="subtext">#A3A8D6</color>
+    <color name="danger">#FF8DA1</color>
+</resources>

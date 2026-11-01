@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Quiet Pill design tokens, dark values. -->
+<!-- Same as values/q_tokens.xml on purpose: the app does not switch to light mode (light mode is optional, step D6). -->
 <resources>
-    <color name="q_bg">#FF101114</color>
-    <color name="q_surface">#FF1A1C22</color>
-    <color name="q_surface_hi">#FF232630</color>
-    <color name="q_outline">#FF2E3240</color>
-    <color name="q_text">#FFECEDF3</color>
-    <color name="q_text_sub">#FFA3A7B8</color>
-    <color name="q_icon">#FFD9DBE6</color>
-    <color name="q_accent">#FF7C8CFF</color>
-    <color name="q_accent_text">#FFB9C2FF</color>
-    <color name="q_accent_container">#FF2B3170</color>
-    <color name="q_on_accent">#FF0E1020</color>
-    <color name="q_danger">#FFFF8A8A</color>
+    <color name="q_bg">#FF141629</color>
+    <color name="q_surface">#FF1B1E38</color>
+    <color name="q_surface_hi">#FF222648</color>
+    <color name="q_outline">#FF30356B</color>
+    <color name="q_text">#FFF4F4FF</color>
+    <color name="q_text_sub">#FFA3A8D6</color>
+    <color name="q_icon">#FFF4F4FF</color>
+    <color name="q_accent">#FFFF8A5B</color>
+    <color name="q_accent_text">#FFFF8A5B</color>
+    <color name="q_accent_container">#FF3A2A3C</color>
+    <color name="q_on_accent">#FF1A1020</color>
+    <color name="q_danger">#FFFF8DA1</color>
     <color name="q_scrim">#99000000</color>
 </resources>

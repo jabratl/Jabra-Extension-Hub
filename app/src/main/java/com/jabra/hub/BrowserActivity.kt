@@ -1,6 +1,8 @@
 package com.jabra.hub
 
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
+import android.content.res.ColorStateList
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -16,6 +18,7 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.OvershootInterpolator
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.webkit.CookieManager
@@ -31,6 +34,7 @@ import android.widget.ArrayAdapter
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ListPopupWindow
 import android.widget.PopupMenu
@@ -44,9 +48,12 @@ import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.widget.NestedScrollView
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import com.google.android.material.bottomsheet.BottomSheetBehavior
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import java.text.DateFormat
 import java.text.SimpleDateFormat
@@ -73,7 +80,19 @@ class BrowserActivity : AppCompatActivity() {
     private var webIdx = 0
     private var webId = View.NO_ID
     private var webLp: ViewGroup.LayoutParams? = null
-    private var tabBtn: TextView? = null
+    // Quiet Pill (0.9.14): bottom address pill
+    private var tabCount: TextView? = null
+    private var tabsBtn: View? = null
+    private lateinit var pillWrap: ViewGroup
+    private lateinit var pill: View
+    private lateinit var secureIcon: ImageView
+    private lateinit var clearBtn: View
+    private lateinit var menuBtn: View
+    private lateinit var suggestBox: View
+    private lateinit var suggestList: LinearLayout
+    private var fullUrl = ""
+    private var compact = false
+    private var compactAnim: ValueAnimator? = null
 
     /** The WebView of the current tab. Older code keeps using "web" and "found" unchanged. */
     private val web: WebView get() = curTab!!.web
@@ -97,7 +116,6 @@ class BrowserActivity : AppCompatActivity() {
     private var darkPage = false
 
     // address-bar suggestions (Hub 0.9.9)
-    private var suggestPopup: ListPopupWindow? = null
     private var suggestItems: List<BrowserEntry> = emptyList()
     private var suppressSuggest = false
 
@@ -173,19 +191,28 @@ class BrowserActivity : AppCompatActivity() {
         panel = findViewById(R.id.panel)
         panelList = findViewById(R.id.panelList)
         progress = findViewById(R.id.progress)
+        pillWrap = findViewById(R.id.pillWrap)
+        pill = findViewById(R.id.pill)
+        secureIcon = findViewById(R.id.secure)
+        clearBtn = findViewById(R.id.clearUrl)
+        menuBtn = findViewById(R.id.menu)
+        suggestBox = findViewById(R.id.suggest)
+        suggestList = findViewById(R.id.suggestList)
 
-        findViewById<View>(R.id.back).setOnClickListener { goBack() }
-        findViewById<View>(R.id.close).setOnClickListener { finish() }
-        findViewById<View>(R.id.menu).setOnClickListener { showMenu(it) }
+        // Back is the system back gesture; "Close browser" is in the menu.
+        menuBtn.setOnClickListener { Q.pop(it); Q.tick(it); showMenu(it) }
+        pill.setOnClickListener {
+            urlBar.requestFocus()
+            showKeyboard(urlBar)
+        }
+        clearBtn.setOnClickListener { urlBar.setText("") }
         findViewById<View>(R.id.panelClose).setOnClickListener { hidePanel() }
         chip.setOnClickListener { showPanel() }
 
         urlBar.setOnEditorActionListener { v, actionId, event ->
             if (actionId == EditorInfo.IME_ACTION_GO || event?.keyCode == KeyEvent.KEYCODE_ENTER) {
                 go(v.text.toString())
-                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                imm.hideSoftInputFromWindow(v.windowToken, 0)
-                v.clearFocus()
+                blurUrl()
                 true
             } else false
         }
@@ -197,9 +224,7 @@ class BrowserActivity : AppCompatActivity() {
                 showSuggest(s?.toString().orEmpty())
             }
         })
-        urlBar.setOnFocusChangeListener { _, has ->
-            if (has) urlBar.post { urlBar.selectAll() } else dismissSuggest()
-        }
+        urlBar.setOnFocusChangeListener { _, has -> onUrlFocus(has) }
 
         setupTab(first)
         addTabButton()
@@ -207,7 +232,7 @@ class BrowserActivity : AppCompatActivity() {
         onBackPressedDispatcher.addCallback(this) {
             when {
                 findBar != null -> hideFind()
-                suggestPopup?.isShowing == true -> dismissSuggest()
+                urlBar.hasFocus() || suggestBox.visibility == View.VISIBLE -> blurUrl()
                 customView != null -> exitFullscreen()
                 panel.visibility == View.VISIBLE -> hidePanel()
                 else -> goBack()
@@ -367,6 +392,7 @@ class BrowserActivity : AppCompatActivity() {
                 blockedCount = 0
                 if (t === curTab) {
                     setUrlText(url)
+                    setCompact(false)
                     updateChip()
                     if (panel.visibility == View.VISIBLE) showPanel()
                 }
@@ -385,6 +411,12 @@ class BrowserActivity : AppCompatActivity() {
                     if (t === curTab) BrowserStore.setLastUrl(this@BrowserActivity, url)
                 }
             }
+        }
+        // Scrolling down shrinks the address pill to the host only; scrolling up brings it back.
+        t.web.setOnScrollChangeListener { _, _, y, _, oldY ->
+            if (t !== curTab || urlBar.hasFocus()) return@setOnScrollChangeListener
+            val dy = y - oldY
+            if (y <= 0 || dy < -8) setCompact(false) else if (dy > 8) setCompact(true)
         }
         t.web.setDownloadListener { u, _, _, _, _ ->
             onFound(t, u, "file")
@@ -440,29 +472,19 @@ class BrowserActivity : AppCompatActivity() {
     // ---------- tabs (Hub 0.9.7): only the current tab's WebView is attached; the others are paused ----------
 
     private fun updateTabBadge() {
-        tabBtn?.text = "▢${tabs.size}"
+        tabCount?.text = tabs.size.toString()
+        tabsBtn?.contentDescription = "Tabs, ${tabs.size} open"
     }
 
-    /** Adds a small tab-count button next to the menu button (only if the top bar is a horizontal LinearLayout; the menu always has "Tabs"). */
+    /** Wires the tab-count button inside the address pill. */
     private fun addTabButton() {
-        val menuBtn = findViewById<View>(R.id.menu)
-        val par = menuBtn.parent
-        if (par !is LinearLayout || par.orientation != LinearLayout.HORIZONTAL) return
-        val dp = resources.displayMetrics.density
-        val ref = (findViewById<View>(R.id.close) as? TextView) ?: (menuBtn as? TextView)
-        val b = TextView(this)
-        b.gravity = android.view.Gravity.CENTER
-        b.textSize = 14f
-        b.minWidth = (36 * dp).toInt()
-        b.setPadding((8 * dp).toInt(), 0, (8 * dp).toInt(), 0)
-        b.setTextColor(ref?.currentTextColor ?: 0xFFAAAAAA.toInt())
-        b.setOnClickListener { showTabs() }
-        par.addView(
-            b,
-            par.indexOfChild(menuBtn),
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT)
-        )
-        tabBtn = b
+        tabsBtn = findViewById(R.id.tabsBtn)
+        tabCount = findViewById(R.id.tabCount)
+        tabsBtn?.setOnClickListener {
+            Q.pop(it)
+            Q.tick(it)
+            showTabs()
+        }
         updateTabBadge()
     }
 
@@ -512,6 +534,7 @@ class BrowserActivity : AppCompatActivity() {
         updateChip()
         if (panel.visibility == View.VISIBLE) showPanel()
         updateTabBadge()
+        setCompact(false)
     }
 
     private fun closeTab(t: Tab) {
@@ -621,12 +644,48 @@ class BrowserActivity : AppCompatActivity() {
 
     // ---------- address-bar suggestions and search engine (Hub 0.9.9) ----------
 
-    /** Sets the address text without opening the suggestion list. The new-tab page shows an empty bar. */
+    /** Remembers the full address. The pill shows only the host until the person taps it to type. */
     private fun setUrlText(u: String?) {
-        suppressSuggest = true
-        urlBar.setText(if (NewTabPage.isNewTab(u)) "" else (u ?: ""))
-        suppressSuggest = false
+        fullUrl = if (NewTabPage.isNewTab(u)) "" else (u ?: "")
+        if (urlBar.hasFocus()) {
+            suppressSuggest = true
+            urlBar.setText(fullUrl)
+            suppressSuggest = false
+        } else {
+            showHostText()
+        }
+        updateSecureIcon()
         dismissSuggest()
+    }
+
+    private fun hostLabel(u: String): String {
+        if (u.isEmpty()) return ""
+        val h = Uri.parse(u).host
+        return if (h.isNullOrEmpty()) u else h.removePrefix("www.")
+    }
+
+    private fun showHostText() {
+        suppressSuggest = true
+        urlBar.setText(hostLabel(fullUrl))
+        suppressSuggest = false
+    }
+
+    private fun updateSecureIcon() {
+        val https = fullUrl.startsWith("https://")
+        val http = fullUrl.startsWith("http://")
+        secureIcon.setImageResource(
+            when {
+                https -> R.drawable.q_ic_lock
+                http -> R.drawable.q_ic_lock_open
+                else -> R.drawable.q_ic_search
+            }
+        )
+        secureIcon.imageTintList = if (http) ColorStateList.valueOf(Q.color(this, R.color.q_danger)) else null
+        secureIcon.contentDescription = when {
+            https -> "Secure connection"
+            http -> "Not secure"
+            else -> "Search"
+        }
     }
 
     private fun tabHost(t: Tab): String {
@@ -634,11 +693,82 @@ class BrowserActivity : AppCompatActivity() {
         return if (NewTabPage.isNewTab(u)) "" else (Uri.parse(u).host ?: "")
     }
 
-    private fun dismissSuggest() {
-        suggestPopup?.dismiss()
-        suggestPopup = null
+    /** Typing mode: the pill shows the full address with a clear button; the tab and menu buttons step aside. */
+    private fun onUrlFocus(has: Boolean) {
+        android.transition.TransitionManager.beginDelayedTransition(pillWrap)
+        if (has) {
+            setCompact(false)
+            tabsBtn?.visibility = View.GONE
+            menuBtn.visibility = View.GONE
+            clearBtn.visibility = View.VISIBLE
+            suppressSuggest = true
+            urlBar.setText(fullUrl)
+            suppressSuggest = false
+            urlBar.post { urlBar.selectAll() }
+            Q.tick(pill)
+        } else {
+            dismissSuggest()
+            tabsBtn?.visibility = View.VISIBLE
+            menuBtn.visibility = View.VISIBLE
+            clearBtn.visibility = View.GONE
+            showHostText()
+        }
     }
 
+    /** Leaves typing mode: hides the keyboard and the suggestions, and puts the focus on the pill frame. */
+    private fun blurUrl() {
+        dismissSuggest()
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.hideSoftInputFromWindow(urlBar.windowToken, 0)
+        urlBar.clearFocus()
+        pillWrap.requestFocus()
+    }
+
+    /** Shrinks the pill to a small host-only capsule (on = true) or restores it. The pill row has a fixed height, so the page never resizes. */
+    private fun setCompact(on: Boolean) {
+        if (compact == on) return
+        compact = on
+        val lp = pill.layoutParams as FrameLayout.LayoutParams
+        val d = resources.displayMetrics.density
+        val m0 = lp.leftMargin
+        val m1 = ((if (on) 76 else 12) * d).toInt()
+        val h0 = lp.height
+        val h1 = ((if (on) 40 else 56) * d).toInt()
+        compactAnim?.cancel()
+        if (!on) {
+            tabsBtn?.visibility = View.VISIBLE
+            menuBtn.visibility = View.VISIBLE
+        }
+        val a = ValueAnimator.ofFloat(0f, 1f)
+        a.duration = 240L
+        a.interpolator = OvershootInterpolator(0.8f)
+        a.addUpdateListener { va ->
+            val f = va.animatedValue as Float
+            lp.leftMargin = m0 + ((m1 - m0) * f).toInt()
+            lp.rightMargin = lp.leftMargin
+            lp.height = h0 + ((h1 - h0) * f).toInt()
+            pill.layoutParams = lp
+            val side = (if (on) 1f - f else f).coerceIn(0f, 1f)
+            tabsBtn?.alpha = side
+            menuBtn.alpha = side
+        }
+        a.addListener(object : android.animation.AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: android.animation.Animator) {
+                if (compact && on) {
+                    tabsBtn?.visibility = View.INVISIBLE
+                    menuBtn.visibility = View.INVISIBLE
+                }
+            }
+        })
+        compactAnim = a
+        a.start()
+    }
+
+    private fun dismissSuggest() {
+        if (::suggestBox.isInitialized) suggestBox.visibility = View.GONE
+    }
+
+    /** Suggestion list: a card right above the pill (rows are built here, newest and bookmarked first as before). */
     private fun showSuggest(text: String) {
         val q = text.trim()
         if (q.isEmpty() || suppressSuggest || !urlBar.hasFocus()) {
@@ -648,33 +778,61 @@ class BrowserActivity : AppCompatActivity() {
         val items = BrowserStore.suggest(this, q)
         suggestItems = items
         val marks = BrowserStore.bookmarks(this).map { it.url }.toHashSet()
-        val rows = ArrayList<String>()
-        rows.add("\uD83D\uDD0D  " + q)
-        for (e in items) {
-            rows.add((if (e.url in marks) "★ " else "\uD83D\uDD58 ") + e.title.ifBlank { e.url }.take(80) + "\n" + e.url.removePrefix("https://").removePrefix("http://").take(90))
-        }
-        val anchor = (urlBar.parent as? View) ?: urlBar
-        val p = suggestPopup ?: ListPopupWindow(this).also {
-            it.anchorView = anchor
-            it.inputMethodMode = ListPopupWindow.INPUT_METHOD_NEEDED
-            it.isModal = false
-            it.setOnItemClickListener { _, _, pos, _ ->
-                val target = if (pos == 0) urlBar.text.toString() else suggestItems.getOrNull(pos - 1)?.url ?: urlBar.text.toString()
-                dismissSuggest()
-                go(target)
-                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                imm.hideSoftInputFromWindow(urlBar.windowToken, 0)
-                urlBar.clearFocus()
+        suggestList.removeAllViews()
+        val rowH = Q.dp(this, 52)
+        val maxRows = (((webHost?.height ?: 0) - Q.dp(this, 16)) / rowH).coerceIn(2, 7)
+        val tv = android.util.TypedValue()
+        theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
+
+        fun row(icon: Int, title: String, sub: String, target: String) {
+            val r = LinearLayout(this)
+            r.orientation = LinearLayout.HORIZONTAL
+            r.gravity = Gravity.CENTER_VERTICAL
+            r.setPadding(Q.dp(this, 16), 0, Q.dp(this, 16), 0)
+            r.setBackgroundResource(tv.resourceId)
+            val ic = ImageView(this)
+            ic.setImageResource(icon)
+            ic.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            r.addView(ic, LinearLayout.LayoutParams(Q.dp(this, 24), Q.dp(this, 24)))
+            val col = LinearLayout(this)
+            col.orientation = LinearLayout.VERTICAL
+            val t = TextView(this)
+            t.text = title
+            t.textSize = 15f
+            t.maxLines = 1
+            t.ellipsize = android.text.TextUtils.TruncateAt.END
+            t.setTextColor(Q.color(this, R.color.q_text))
+            col.addView(t)
+            if (sub.isNotEmpty()) {
+                val st = TextView(this)
+                st.text = sub
+                st.textSize = 12f
+                st.maxLines = 1
+                st.ellipsize = android.text.TextUtils.TruncateAt.END
+                st.setTextColor(Q.color(this, R.color.q_text_sub))
+                col.addView(st)
             }
-            suggestPopup = it
+            val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            lp.marginStart = Q.dp(this, 16)
+            r.addView(col, lp)
+            r.setOnClickListener {
+                Q.tick(it)
+                blurUrl()
+                go(target)
+            }
+            suggestList.addView(r, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, rowH))
         }
-        p.width = anchor.width.coerceAtLeast(1)
-        p.setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, rows))
-        try {
-            p.show()
-        } catch (_: Exception) {
-            suggestPopup = null
+
+        row(R.drawable.q_ic_search, q, "", text)
+        for (e in items.take(maxRows - 1)) {
+            row(
+                if (e.url in marks) R.drawable.q_ic_star else R.drawable.q_ic_history,
+                e.title.ifBlank { e.url }.take(80),
+                e.url.removePrefix("https://").removePrefix("http://").take(90),
+                e.url
+            )
         }
+        suggestBox.visibility = View.VISIBLE
     }
 
     private fun chooseEngine() {
@@ -968,104 +1126,214 @@ class BrowserActivity : AppCompatActivity() {
         web.loadUrl(target)
     }
 
-    // ---------- menu ----------
+    // ---------- menu: bottom sheet (Quiet Pill, 0.9.14) ----------
 
     private fun showMenu(anchor: View) {
         val pageUrl = web.url?.takeUnless { NewTabPage.isNewTab(it) } ?: ""
         val marked = pageUrl.isNotEmpty() && BrowserStore.isBookmarked(this, pageUrl)
-        val m = PopupMenu(this, anchor)
-        m.menu.add(0, 20, 0, "Tabs (${tabs.size})")
-        m.menu.add(0, 21, 0, "New tab")
-        m.menu.add(0, 1, 0, if (marked) "★ Remove bookmark" else "☆ Add bookmark")
-        m.menu.add(0, 2, 1, "Bookmarks")
-        m.menu.add(0, 13, 1, "Bookmarks: export / import")
-        m.menu.add(0, 3, 2, "History")
-        m.menu.add(0, 22, 2, "Search engine: " + BrowserStore.engine(this).name)
-        val pt = m.menu.addSubMenu(0, 30, 3, "Page tools")
-        pt.add(0, 23, 0, "Find in page")
-        pt.add(0, 24, 1, "Text size: " + BrowserStore.textZoom(this) + "%")
-        val dp = pt.add(0, 25, 2, "Dark pages")
-        dp.isCheckable = true
-        dp.isChecked = darkPage
-        pt.add(0, 26, 3, "Save page (PDF / archive)")
-        val siteAds = pt.add(0, 28, 4, "Ad blocker on this site")
-        siteAds.isCheckable = true
-        siteAds.isChecked = adblock && !siteAllowed(Uri.parse(pageUrl).host)
-        val allDesk = pt.add(0, 27, 5, "Desktop for all sites")
-        allDesk.isCheckable = true
-        allDesk.isChecked = desktop
-        pt.add(0, 29, 6, "Site settings (allowed / desktop)")
-        m.menu.add(0, 4, 3, "Forward")
-        m.menu.add(0, 5, 4, "Reload")
-        val ab = m.menu.add(0, 6, 5, "Ad blocker" + if (adblock) " (blocked $blockedCount)" else "")
-        ab.isCheckable = true
-        ab.isChecked = adblock
-        val dk = m.menu.add(0, 7, 6, "Desktop site (this site)")
-        dk.isCheckable = true
-        dk.isChecked = desktopFor(Uri.parse(pageUrl).host)
-        val sh = m.menu.add(0, 8, 7, "Save history")
-        sh.isCheckable = true
-        sh.isChecked = BrowserStore.saveHistory(this)
-        m.menu.add(0, 9, 8, "Share link")
-        m.menu.add(0, 10, 9, "Copy link")
-        m.menu.add(0, 11, 10, "Clear browsing data")
-        val active = DlJobs.activeCount()
-        m.menu.add(0, 12, 11, if (active > 0) "Downloads ($active running)" else "Downloads")
-        m.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                1 -> if (pageUrl.startsWith("http")) {
-                    val now = BrowserStore.toggleBookmark(this, pageUrl, web.title ?: "")
-                    Toast.makeText(this, if (now) "Bookmarked" else "Bookmark removed", Toast.LENGTH_SHORT).show()
-                }
-                2 -> showManager(true)
-                3 -> showManager(false)
-                4 -> if (web.canGoForward()) web.goForward()
-                5 -> web.reload()
-                6 -> {
-                    adblock = !adblock
-                    BrowserStore.setAdblock(this, adblock)
-                    Toast.makeText(this, if (adblock) "Ad blocker on" else "Ad blocker off", Toast.LENGTH_SHORT).show()
-                    web.reload()
-                }
-                7 -> toggleDesktopSite(pageUrl)
-                27 -> {
-                    desktop = !desktop
-                    BrowserStore.setDesktop(this, desktop)
-                    applyDesktopAll()
-                    web.reload()
-                }
-                28 -> toggleSiteAds(pageUrl)
-                29 -> showSiteSettings()
-                8 -> BrowserStore.setSaveHistory(this, !BrowserStore.saveHistory(this))
-                9 -> if (pageUrl.isNotEmpty()) {
-                    val i = Intent(Intent.ACTION_SEND).setType("text/plain")
-                        .putExtra(Intent.EXTRA_TEXT, pageUrl)
-                    startActivity(Intent.createChooser(i, "Share link"))
-                }
-                10 -> if (pageUrl.isNotEmpty()) {
-                    val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    cm.setPrimaryClip(ClipData.newPlainText("link", pageUrl))
-                    Toast.makeText(this, "Link copied", Toast.LENGTH_SHORT).show()
-                }
-                11 -> confirmClear()
-                12 -> startActivity(Intent(this, DownloadsActivity::class.java))
-                20 -> showTabs()
-                21 -> newTab(NewTabPage.URL)
-                22 -> chooseEngine()
-                23 -> showFind()
-                24 -> chooseTextSize()
-                25 -> {
-                    darkPage = !darkPage
-                    BrowserStore.setDarkPage(this, darkPage)
-                    for (t in tabs) applyDark(t.web, t.web.url)
-                    Toast.makeText(this, if (darkPage) "Dark pages on" else "Dark pages off", Toast.LENGTH_SHORT).show()
-                }
-                26 -> savePage()
-                13 -> showBookmarkTools()
+        val pageHost = Uri.parse(pageUrl).host
+        val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
+        val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
+        val sheet = BottomSheetDialog(this)
+        val content = LinearLayout(this)
+        content.orientation = LinearLayout.VERTICAL
+        content.setPadding(Q.dp(this, 8), Q.dp(this, 20), Q.dp(this, 8), Q.dp(this, 16))
+
+        // Row of round quick buttons.
+        val quick = LinearLayout(this)
+        quick.orientation = LinearLayout.HORIZONTAL
+        quick.setPadding(0, 0, 0, Q.dp(this, 8))
+        fun quickBtn(icon: Int, label: String, on: Boolean, toggle: Boolean, id: Int) {
+            val col = LinearLayout(this)
+            col.orientation = LinearLayout.VERTICAL
+            col.gravity = Gravity.CENTER_HORIZONTAL
+            col.contentDescription = label + if (toggle) (if (on) ", on" else ", off") else ""
+            val img = ImageView(this)
+            img.setImageResource(icon)
+            img.scaleType = ImageView.ScaleType.CENTER
+            img.setBackgroundResource(if (on) R.drawable.q_circle_btn_on else R.drawable.q_circle_btn)
+            img.imageTintList = ColorStateList.valueOf(Q.color(this, if (on) R.color.q_on_accent else R.color.q_icon))
+            img.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            col.addView(img, LinearLayout.LayoutParams(Q.dp(this, 48), Q.dp(this, 48)))
+            val tv = TextView(this)
+            tv.text = label
+            tv.textSize = 11f
+            tv.maxLines = 1
+            tv.gravity = Gravity.CENTER
+            tv.setTextColor(Q.color(this, R.color.q_text_sub))
+            tv.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            tv.setPadding(0, Q.dp(this, 4), 0, Q.dp(this, 4))
+            col.addView(tv, LinearLayout.LayoutParams(WRAP, WRAP))
+            col.setOnClickListener {
+                Q.tick(it)
+                sheet.dismiss()
+                menuAction(id, pageUrl)
             }
-            true
+            quick.addView(col, LinearLayout.LayoutParams(0, WRAP, 1f))
         }
-        m.show()
+        quickBtn(if (marked) R.drawable.q_ic_star else R.drawable.q_ic_star_outline, "Bookmark", marked, true, 1)
+        quickBtn(R.drawable.q_ic_share, "Share", false, false, 9)
+        quickBtn(R.drawable.q_ic_search, "Find", false, false, 23)
+        quickBtn(R.drawable.q_ic_dark, "Dark", darkPage, true, 25)
+        quickBtn(R.drawable.q_ic_shield, "Ad block", adblock, true, 6)
+        quickBtn(R.drawable.q_ic_desktop, "Desktop", desktopFor(pageHost), true, 7)
+
+        // Compact list below (no submenus).
+        val list = LinearLayout(this)
+        list.orientation = LinearLayout.VERTICAL
+        val sel = android.util.TypedValue()
+        theme.resolveAttribute(android.R.attr.selectableItemBackground, sel, true)
+        fun divider() {
+            val v = View(this)
+            v.setBackgroundColor(Q.color(this, R.color.q_outline))
+            val lp = LinearLayout.LayoutParams(MATCH, Q.dp(this, 1))
+            lp.setMargins(Q.dp(this, 16), Q.dp(this, 4), Q.dp(this, 16), Q.dp(this, 4))
+            list.addView(v, lp)
+        }
+        fun item(icon: Int, label: String, sub: String?, checked: Boolean?, id: Int, danger: Boolean = false, flip: Boolean = false) {
+            val row = LinearLayout(this)
+            row.orientation = LinearLayout.HORIZONTAL
+            row.gravity = Gravity.CENTER_VERTICAL
+            row.minimumHeight = Q.dp(this, 48)
+            row.setPadding(Q.dp(this, 16), Q.dp(this, 6), Q.dp(this, 16), Q.dp(this, 6))
+            row.setBackgroundResource(sel.resourceId)
+            val ic = ImageView(this)
+            ic.setImageResource(icon)
+            if (flip) ic.scaleX = -1f
+            if (danger) ic.imageTintList = ColorStateList.valueOf(Q.color(this, R.color.q_danger))
+            ic.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            row.addView(ic, LinearLayout.LayoutParams(Q.dp(this, 24), Q.dp(this, 24)))
+            val col = LinearLayout(this)
+            col.orientation = LinearLayout.VERTICAL
+            val t = TextView(this)
+            t.text = label
+            t.textSize = 15f
+            t.setTextColor(Q.color(this, if (danger) R.color.q_danger else R.color.q_text))
+            col.addView(t)
+            if (!sub.isNullOrBlank()) {
+                val st = TextView(this)
+                st.text = sub
+                st.textSize = 12f
+                st.setTextColor(Q.color(this, R.color.q_text_sub))
+                col.addView(st)
+            }
+            val lp = LinearLayout.LayoutParams(0, WRAP, 1f)
+            lp.marginStart = Q.dp(this, 16)
+            row.addView(col, lp)
+            if (checked == true) {
+                val ck = ImageView(this)
+                ck.setImageResource(R.drawable.q_ic_check)
+                ck.imageTintList = ColorStateList.valueOf(Q.color(this, R.color.q_accent))
+                ck.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                row.addView(ck, LinearLayout.LayoutParams(Q.dp(this, 24), Q.dp(this, 24)))
+            }
+            row.contentDescription = label +
+                (if (!sub.isNullOrBlank()) ", $sub" else "") +
+                (if (checked != null) (if (checked) ", on" else ", off") else "")
+            row.setOnClickListener {
+                Q.tick(it)
+                sheet.dismiss()
+                menuAction(id, pageUrl)
+            }
+            list.addView(row, LinearLayout.LayoutParams(MATCH, WRAP))
+        }
+
+        divider()
+        item(R.drawable.q_ic_tabs, "Tabs", "${tabs.size} open", null, 20)
+        item(R.drawable.q_ic_add, "New tab", null, null, 21)
+        item(R.drawable.q_ic_bookmark, "Bookmarks", null, null, 2)
+        item(R.drawable.q_ic_history, "History", null, null, 3)
+        val active = DlJobs.activeCount()
+        item(R.drawable.q_ic_download, "Downloads", if (active > 0) "$active running" else null, null, 12)
+        divider()
+        item(R.drawable.q_ic_back, "Forward", null, null, 4, flip = true)
+        item(R.drawable.q_ic_refresh, "Reload", null, null, 5)
+        item(R.drawable.q_ic_copy, "Copy link", null, null, 10)
+        item(R.drawable.q_ic_text_size, "Text size", BrowserStore.textZoom(this).toString() + "%", null, 24)
+        item(R.drawable.q_ic_search, "Search engine", BrowserStore.engine(this).name, null, 22)
+        item(R.drawable.q_ic_download, "Save page (PDF / archive)", null, null, 26)
+        divider()
+        item(
+            R.drawable.q_ic_shield, "Ad blocker on this site",
+            if (adblock) "Blocked $blockedCount on this page" else "Off for all sites",
+            adblock && !siteAllowed(pageHost), 28
+        )
+        item(R.drawable.q_ic_desktop, "Desktop for all sites", null, desktop, 27)
+        item(R.drawable.q_ic_tune, "Site settings", "Allowed sites and desktop sites", null, 29)
+        item(R.drawable.q_ic_history, "Save history", null, BrowserStore.saveHistory(this), 8)
+        divider()
+        item(R.drawable.q_ic_bookmark, "Bookmarks: export / import", null, null, 13)
+        item(R.drawable.q_ic_close, "Clear browsing data", null, null, 11, danger = true)
+        item(R.drawable.q_ic_close, "Close browser", null, null, 14)
+
+        content.addView(quick, LinearLayout.LayoutParams(MATCH, WRAP))
+        content.addView(list, LinearLayout.LayoutParams(MATCH, WRAP))
+        val sv = NestedScrollView(this)
+        sv.addView(content)
+        sheet.setContentView(sv)
+        sheet.setOnShowListener {
+            sheet.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
+                ?.setBackgroundResource(R.drawable.q_sheet_bg)
+            sheet.behavior.skipCollapsed = true
+            sheet.behavior.state = BottomSheetBehavior.STATE_EXPANDED
+        }
+        sheet.show()
+    }
+
+    /** One menu entry by id (same ids as the old popup menu; 14 = close the browser). */
+    private fun menuAction(id: Int, pageUrl: String) {
+        when (id) {
+            1 -> if (pageUrl.startsWith("http")) {
+                val now = BrowserStore.toggleBookmark(this, pageUrl, web.title ?: "")
+                Toast.makeText(this, if (now) "Bookmarked" else "Bookmark removed", Toast.LENGTH_SHORT).show()
+            }
+            2 -> showManager(true)
+            3 -> showManager(false)
+            4 -> if (web.canGoForward()) web.goForward()
+            5 -> web.reload()
+            6 -> {
+                adblock = !adblock
+                BrowserStore.setAdblock(this, adblock)
+                Toast.makeText(this, if (adblock) "Ad blocker on" else "Ad blocker off", Toast.LENGTH_SHORT).show()
+                web.reload()
+            }
+            7 -> toggleDesktopSite(pageUrl)
+            27 -> {
+                desktop = !desktop
+                BrowserStore.setDesktop(this, desktop)
+                applyDesktopAll()
+                web.reload()
+            }
+            28 -> toggleSiteAds(pageUrl)
+            29 -> showSiteSettings()
+            8 -> BrowserStore.setSaveHistory(this, !BrowserStore.saveHistory(this))
+            9 -> if (pageUrl.isNotEmpty()) {
+                val i = Intent(Intent.ACTION_SEND).setType("text/plain")
+                    .putExtra(Intent.EXTRA_TEXT, pageUrl)
+                startActivity(Intent.createChooser(i, "Share link"))
+            }
+            10 -> if (pageUrl.isNotEmpty()) {
+                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText("link", pageUrl))
+                Toast.makeText(this, "Link copied", Toast.LENGTH_SHORT).show()
+            }
+            11 -> confirmClear()
+            12 -> startActivity(Intent(this, DownloadsActivity::class.java))
+            20 -> showTabs()
+            21 -> newTab(NewTabPage.URL)
+            22 -> chooseEngine()
+            23 -> showFind()
+            24 -> chooseTextSize()
+            25 -> {
+                darkPage = !darkPage
+                BrowserStore.setDarkPage(this, darkPage)
+                for (t in tabs) applyDark(t.web, t.web.url)
+                Toast.makeText(this, if (darkPage) "Dark pages on" else "Dark pages off", Toast.LENGTH_SHORT).show()
+            }
+            26 -> savePage()
+            13 -> showBookmarkTools()
+            14 -> finish()
+        }
     }
 
     private fun showList(title: String, list: List<BrowserEntry>, clearLabel: String, onClear: () -> Unit) {
