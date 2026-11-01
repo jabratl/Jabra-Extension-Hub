@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
 import android.graphics.Outline
+import android.graphics.drawable.InsetDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.os.Message
@@ -111,6 +112,9 @@ class BrowserActivity : AppCompatActivity() {
     private lateinit var chip: TextView
     private lateinit var panel: View
     private lateinit var panelList: LinearLayout
+    private lateinit var panelBar: LinearLayout
+    private var panelClosing = false
+    private var selectRefresh: (() -> Unit)? = null
     private lateinit var progress: ProgressBar
     private lateinit var downloader: Downloader
     private val found: LinkedHashMap<String, Media> get() = curTab!!.found
@@ -201,6 +205,7 @@ class BrowserActivity : AppCompatActivity() {
         chip = findViewById(R.id.chip)
         panel = findViewById(R.id.panel)
         panelList = findViewById(R.id.panelList)
+        panelBar = findViewById(R.id.panelBar)
         progress = findViewById(R.id.progress)
         pillWrap = findViewById(R.id.pillWrap)
         pill = findViewById(R.id.pill)
@@ -218,6 +223,7 @@ class BrowserActivity : AppCompatActivity() {
         }
         clearBtn.setOnClickListener { urlBar.setText("") }
         findViewById<View>(R.id.panelClose).setOnClickListener { hidePanel() }
+        attachSheetDrag(findViewById(R.id.panelHead))
         chip.setOnClickListener { showPanel() }
 
         urlBar.setOnEditorActionListener { v, actionId, event ->
@@ -1960,89 +1966,200 @@ class BrowserActivity : AppCompatActivity() {
     }
 
     private fun updateChip() {
-        chip.text = "🎬 ${found.size} found"
+        chip.text = "${found.size} found"
+        chip.contentDescription = "${found.size} media found on this page. Open list"
         chip.visibility = if (found.isNotEmpty() && panel.visibility != View.VISIBLE) View.VISIBLE else View.GONE
     }
 
+    /** Slides the media sheet down, then hides it. */
     private fun hidePanel() {
-        panel.visibility = View.GONE
-        updateChip()
+        if (panel.visibility != View.VISIBLE) {
+            updateChip()
+            return
+        }
+        panelClosing = true
+        panel.animate().cancel()
+        panel.animate().translationY(maxOf(panel.height, Q.dp(this, 360)).toFloat()).setDuration(180L)
+            .setInterpolator(AccelerateInterpolator())
+            .withEndAction {
+                panelClosing = false
+                panel.visibility = View.GONE
+                panel.translationY = 0f
+                updateChip()
+            }.start()
     }
 
+    /** Drag the sheet's handle/title area down to close it (past 96dp), otherwise it springs back. */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun attachSheetDrag(head: View) {
+        var y0 = 0f
+        var dy = 0f
+        head.setOnTouchListener { _, e ->
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    panel.animate().cancel()
+                    y0 = e.rawY
+                    dy = 0f
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    dy = maxOf(0f, e.rawY - y0)
+                    panel.translationY = dy
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    if (e.actionMasked == MotionEvent.ACTION_UP && dy > Q.dp(this, 96)) {
+                        hidePanel()
+                    } else {
+                        panel.animate().translationY(0f).setDuration(260L)
+                            .setInterpolator(OvershootInterpolator(1.5f)).start()
+                    }
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    /** Media sheet (0.9.17, D5): pinned bar (filter + Select, or the select bar), then the list. */
     private fun showPanel() {
+        if (panelClosing && panel.visibility == View.VISIBLE) return
+        fun dp(n: Int) = Q.dp(this, n)
+        val wasHidden = panel.visibility != View.VISIBLE
+        panel.animate().cancel()
         panel.visibility = View.VISIBLE
+        if (wasHidden) {
+            panel.translationY = dp(360).toFloat()
+            panel.animate().translationY(0f).setDuration(260L).setInterpolator(DecelerateInterpolator()).start()
+        } else {
+            panel.translationY = 0f
+        }
         chip.visibility = View.GONE
         panelList.removeAllViews()
+        panelBar.removeAllViews()
         selected.retainAll(found.keys)
+
+        fun note(msg: String) = TextView(this).apply {
+            text = msg
+            setTextColor(Q.color(this@BrowserActivity, R.color.q_text_sub))
+            textSize = 14f
+            setPadding(dp(4), dp(8), dp(4), dp(8))
+        }
+
         if (found.isEmpty()) {
             selectMode = false
-            panelList.addView(TextView(this).apply {
-                text = "Nothing found yet. Play a video on the page and it will show up here."
-                setTextColor(getColor(R.color.br_sub))
-                textSize = 14f
-            })
+            panelBar.visibility = View.GONE
+            panelList.addView(note("Nothing found yet. Play a video on the page and it will show up here."))
             return
         }
         if (panelFilter != "all" && found.values.none { it.kind == panelFilter }) panelFilter = "all"
         val shown = found.values.reversed().filter { panelFilter == "all" || it.kind == panelFilter }
-        val dp = resources.displayMetrics.density
-        val accent = 0xFF7C8CFF.toInt()
+        val accent = Q.color(this, R.color.q_accent)
         val rows = ArrayList<Pair<Media, CheckBox>>()
 
-        fun targets(): List<Media> = if (selectMode && selected.isNotEmpty()) shown.filter { it.url in selected } else shown
+        // select mode acts on the ticked items only
+        fun targets(): List<Media> = if (selectMode) shown.filter { it.url in selected } else shown
 
-        fun action(label: String, onClick: () -> Unit): TextView {
+        /** Rounded chip with an icon; 48dp touch height (the visible chip is 40dp). */
+        fun chipBtn(label: String, icon: Int, strong: Boolean, onClick: () -> Unit): TextView {
             val b = TextView(this)
             b.text = label
             b.textSize = 14f
-            b.setTextColor(accent)
-            b.setPadding((10 * dp).toInt(), (8 * dp).toInt(), (10 * dp).toInt(), (8 * dp).toInt())
-            b.setOnClickListener { onClick() }
+            b.gravity = Gravity.CENTER_VERTICAL
+            b.minHeight = dp(48)
+            b.setPadding(dp(12), 0, dp(16), 0)
+            b.compoundDrawablePadding = dp(8)
+            val col = if (strong) Q.color(this, R.color.q_accent_text) else Q.color(this, R.color.q_text)
+            b.setTextColor(col)
+            val ic = Q.icon(this, icon)
+            ic?.setTint(col)
+            b.setCompoundDrawablesRelativeWithIntrinsicBounds(ic, null, null, null)
+            val bg = Q.icon(this, if (strong) R.drawable.q_chip_accent else R.drawable.q_chip)
+            if (bg != null) b.background = InsetDrawable(bg, 0, dp(4), 0, dp(4))
+            b.isClickable = true
+            b.setOnClickListener {
+                Q.tick(it)
+                onClick()
+            }
             return b
         }
 
-        val header = LinearLayout(this)
-        header.orientation = LinearLayout.VERTICAL
-        val filterBtn = action("Show: " + (if (panelFilter == "all") "All" else panelFilter) + " (${shown.size}) \u25BE") { chooseMediaFilter() }
-        header.addView(filterBtn)
+        fun iconBtn(icon: Int, desc: String, onClick: () -> Unit): ImageView {
+            val b = ImageView(this)
+            b.setImageDrawable(Q.icon(this, icon))
+            b.scaleType = ImageView.ScaleType.CENTER
+            b.contentDescription = desc
+            b.isClickable = true
+            b.setOnClickListener {
+                Q.tick(it)
+                onClick()
+            }
+            return b
+        }
 
-        val bar = LinearLayout(this)
-        bar.orientation = LinearLayout.HORIZONTAL
-        val selBtn = action(if (selectMode) "\u2715 Done" else "\u2611 Select") {
-            selectMode = !selectMode
-            if (!selectMode) selected.clear()
-            showPanel()
-        }
-        val allBtn = action("All") {}
-        val copyBtn = action("") { copyLinks(targets()) }
-        val sendBtn = action("") { sendToGrabber(targets()) }
-        fun refresh() {
-            val n = targets().size
-            copyBtn.text = "Copy ($n)"
-            sendBtn.text = "\u279C Grabber ($n)"
-            allBtn.text = if (shown.isNotEmpty() && shown.all { it.url in selected }) "None" else "All"
-        }
-        allBtn.setOnClickListener {
-            val every = shown.isNotEmpty() && shown.all { it.url in selected }
-            if (every) selected.removeAll(shown.map { it.url }.toSet()) else selected.addAll(shown.map { it.url })
-            for ((m, cb) in rows) cb.isChecked = m.url in selected
+        if (!selectMode) {
+            val filterLabel = (if (panelFilter == "all") "All" else panelFilter) + " (${shown.size})"
+            val f = chipBtn(filterLabel, R.drawable.q_ic_tune, false) { chooseMediaFilter() }
+            f.contentDescription = "Filter: $filterLabel"
+            val sel = chipBtn("Select", R.drawable.q_ic_check, false) {
+                selectMode = true
+                showPanel()
+            }
+            panelBar.addView(f)
+            panelBar.addView(View(this), LinearLayout.LayoutParams(dp(8), 1))
+            panelBar.addView(sel)
+        } else {
+            // contextual bar: Done, count, All/None, Copy, Grabber
+            val ctx = LinearLayout(this)
+            ctx.orientation = LinearLayout.HORIZONTAL
+            ctx.gravity = Gravity.CENTER_VERTICAL
+            ctx.setBackgroundResource(R.drawable.q_chip_accent)
+            val done = iconBtn(R.drawable.q_ic_close, "Done selecting") {
+                selectMode = false
+                selected.clear()
+                showPanel()
+            }
+            val count = TextView(this)
+            count.textSize = 14f
+            count.maxLines = 1
+            count.setTextColor(Q.color(this, R.color.q_text))
+            val allBtn = TextView(this)
+            allBtn.textSize = 14f
+            allBtn.gravity = Gravity.CENTER
+            allBtn.minHeight = dp(48)
+            allBtn.setPadding(dp(8), 0, dp(8), 0)
+            allBtn.setTextColor(Q.color(this, R.color.q_accent_text))
+            allBtn.isClickable = true
+            val copy = iconBtn(R.drawable.q_ic_copy, "Copy links") { copyLinks(targets()) }
+            val send = chipBtn("Grabber", R.drawable.q_ic_share, true) { sendToGrabber(targets()) }
+            send.setPadding(dp(8), 0, dp(12), 0)
+            fun refresh() {
+                val n = targets().size
+                count.text = if (n == 0) "Select items" else "$n selected"
+                allBtn.text = if (shown.isNotEmpty() && shown.all { it.url in selected }) "None" else "All"
+                copy.alpha = if (n == 0) 0.4f else 1f
+                send.alpha = if (n == 0) 0.4f else 1f
+            }
+            allBtn.setOnClickListener {
+                Q.tick(it)
+                val every = shown.isNotEmpty() && shown.all { it.url in selected }
+                if (every) selected.removeAll(shown.map { it.url }.toSet()) else selected.addAll(shown.map { it.url })
+                for ((m, cb) in rows) cb.isChecked = m.url in selected
+                refresh()
+            }
+            ctx.addView(done, LinearLayout.LayoutParams(dp(48), dp(48)))
+            ctx.addView(count, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            ctx.addView(allBtn)
+            ctx.addView(copy, LinearLayout.LayoutParams(dp(48), dp(48)))
+            ctx.addView(send)
+            panelBar.addView(ctx, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            selectRefresh = { refresh() }
             refresh()
         }
-        allBtn.visibility = if (selectMode) View.VISIBLE else View.GONE
-        bar.addView(selBtn)
-        bar.addView(allBtn)
-        bar.addView(copyBtn)
-        bar.addView(sendBtn)
-        header.addView(bar)
-        panelList.addView(header)
-        refresh()
+        panelBar.visibility = View.VISIBLE
 
         if (shown.isEmpty()) {
-            panelList.addView(TextView(this).apply {
-                text = "No items of this type."
-                setTextColor(getColor(R.color.br_sub))
-                textSize = 14f
-            })
+            panelList.addView(note("No items of this type."))
             return
         }
 
@@ -2075,11 +2192,14 @@ class BrowserActivity : AppCompatActivity() {
 
             val cb = CheckBox(this)
             cb.visibility = if (selectMode) View.VISIBLE else View.GONE
+            cb.buttonTintList = ColorStateList.valueOf(accent)
             cb.isChecked = m.url in selected
+            cb.contentDescription = "Select $seg"
             cb.setOnCheckedChangeListener { _, on ->
                 if (on) selected.add(m.url) else selected.remove(m.url)
-                refresh()
+                selectRefresh?.invoke()
             }
+            if (selectMode) v.setOnClickListener { cb.toggle() }
             rows.add(Pair(m, cb))
             val row = LinearLayout(this)
             row.orientation = LinearLayout.HORIZONTAL

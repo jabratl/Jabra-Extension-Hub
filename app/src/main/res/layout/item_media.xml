@@ -1,13 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Quiet Pill (0.9.17): REPLACES your res/layout/item_media.xml. Same ids: mname msub mstatus mplay mbtn. -->
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginBottom="10dp"
-    app:cardBackgroundColor="@color/br_card"
-    app:cardCornerRadius="18dp"
+    android:layout_marginBottom="8dp"
+    app:cardBackgroundColor="@color/q_surface_hi"
+    app:cardCornerRadius="16dp"
     app:cardElevation="0dp"
-    app:strokeColor="@color/br_stroke"
+    app:strokeColor="@color/q_outline"
     app:strokeWidth="1dp">
 
     <LinearLayout
@@ -15,7 +16,7 @@
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:padding="14dp">
+        android:padding="16dp">
 
         <LinearLayout
             android:layout_width="0dp"
@@ -29,7 +30,7 @@
                 android:layout_height="wrap_content"
                 android:ellipsize="middle"
                 android:maxLines="2"
-                android:textColor="@color/br_text"
+                android:textColor="@color/q_text"
                 android:textSize="14sp"
                 android:textStyle="bold" />
 
@@ -40,7 +41,7 @@
                 android:layout_marginTop="2dp"
                 android:ellipsize="end"
                 android:maxLines="1"
-                android:textColor="@color/br_teal"
+                android:textColor="@color/q_text_sub"
                 android:textSize="12sp" />
 
             <TextView
@@ -48,7 +49,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
-                android:textColor="@color/br_sub"
+                android:textColor="@color/q_accent_text"
                 android:textSize="12sp"
                 android:visibility="gone" />
         </LinearLayout>
@@ -64,32 +65,35 @@
                 android:id="@+id/mplay"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="6dp"
-                android:background="@drawable/br_chip"
-                android:gravity="center"
-                android:paddingStart="16dp"
-                android:paddingTop="9dp"
+                android:layout_marginBottom="8dp"
+                android:background="@drawable/q_chip"
+                android:drawablePadding="6dp"
+                android:drawableStart="@drawable/q_ic_play"
+                android:gravity="center_vertical"
+                android:minHeight="40dp"
+                android:paddingStart="12dp"
                 android:paddingEnd="16dp"
-                android:paddingBottom="9dp"
-                android:text="▶ Play"
-                android:textColor="@color/br_text"
+                android:text="Play"
+                android:textColor="@color/q_text"
                 android:textSize="13sp"
                 android:textStyle="bold" />
 
-        <TextView
-            android:id="@+id/mbtn"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="@drawable/br_chip_accent"
-            android:gravity="center"
-            android:paddingStart="16dp"
-            android:paddingTop="9dp"
-            android:paddingEnd="16dp"
-            android:paddingBottom="9dp"
-            android:text="Download"
-            android:textColor="#1A1020"
-            android:textSize="13sp"
-            android:textStyle="bold" />
+            <TextView
+                android:id="@+id/mbtn"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/q_btn_accent"
+                android:drawablePadding="6dp"
+                android:drawableStart="@drawable/q_ic_download"
+                android:drawableTint="@color/q_on_accent"
+                android:gravity="center_vertical"
+                android:minHeight="40dp"
+                android:paddingStart="12dp"
+                android:paddingEnd="16dp"
+                android:text="Download"
+                android:textColor="@color/q_on_accent"
+                android:textSize="13sp"
+                android:textStyle="bold" />
         </LinearLayout>
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

@@ -107,3 +107,17 @@ NOT tested: favicon loading on a real device, light mode look, short screens, 34
 Next: D5 media sheet: panel in activity_browser.xml (docs/res_seen has item_media.xml) + showPanel() in BrowserActivity.kt; chip floats above the pill, select mode = contextual bar (Copy, Grabber, Done); replace hardcoded accent 0xFF7C8CFF with q_accent.
 Context line: Project: Jabra Hub browser. Mode: MODIFY. Base 0.9.16 (build: yes/no, validator: pass/fail). Done: B0-B2, T0-T3, R1-R4, D0-D4. Next: D5.
 
+
+## 0.9.17 (this zip) - Quiet Pill D5
+Done: D5 media sheet. Base 0.9.16 (no build result reported yet for 0.9.14-0.9.16).
+Changed:
+- activity_browser.xml: chip = q_btn_accent pill with q_ic_play, bottom|end margin 16dp (sits above pillWrap because pillWrap is outside the page FrameLayout); panel = q_sheet_bg, handle (q_handle), panelHead (id), title, panelClose now ImageView q_ic_close, new panelBar LinearLayout (gone by default), ScrollView+panelList as before.
+- res/layout/item_media.xml: now IN the zip (the user must replace their copy); q_* tokens, mplay/mbtn with icons; copy of the old one stays in docs/res_seen.
+- BrowserActivity.kt: updateChip (text "N found"), hidePanel (slide down, panelClosing flag), attachSheetDrag(panelHead) (drag > 96dp closes), showPanel rebuilt (slide-up when it was hidden; panelBar = filter chip + Select chip, or contextual select bar Done/count/All-None/Copy/Grabber; chipBtn/iconBtn helpers; rows tap = toggle in select mode; checkbox tinted q_accent). Behaviour change: in select mode Copy/Grabber use ticked items only (targets()). selectRefresh lambda field. No more 0xFF7C8CFF.
+- q_handle.xml new; build.gradle.kts 0.9.17 / code 37.
+Checks done: xmllint, resource names exist, brackets balanced (same imbalance pattern as the original file, caused by "http://" in strings in my counter). No JS touched. NOT compiled, NOT run on a device.
+NOT tested: sheet animation/drag on device, select bar width at 360px, keyboard + sheet, item_media replacement in the user's project.
+Not done: edge-to-edge/insets, TalkBack pass on old dialogs (filter, link menu, media actions), find-bar restyle, light mode, font-scale test.
+Next: D6 polish: 360/410px layouts, edge-to-edge + insets (pill, sheet, tab grid), find bar colours (q_*), TalkBack labels on remaining dialogs, font scale 1.3, fixes from the user's device tests. Ask for build results, crash logs, screenshots.
+Context line: Project: Jabra Hub browser. Mode: MODIFY. Base 0.9.17 (build: yes/no, validator: pass/fail). Done: B0-B2, T0-T3, R1-R4, D0-D5. Next: D6.
+
