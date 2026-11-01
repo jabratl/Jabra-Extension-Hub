@@ -83,7 +83,7 @@ for token, source, label in [
 # H0: no emoji or pictograph symbols in app source. Use vector icons (res/drawable/q_ic_*) or letter tiles.
 # Files listed here still contain some and are cleaned in the named step; delete the entry when it is clean.
 EMOJI = re.compile('[\U0001F000-\U0001FAFF☀-➿⭐■-◿️‍]')
-EMOJI_PENDING = {'Floater.kt': 'H5', 'PluginStore.kt': 'H2', 'MainActivity.kt': 'H1/H2'}
+EMOJI_PENDING = {'Floater.kt': 'H5', 'PluginStore.kt': 'H2', 'MainActivity.kt': 'H1/H2', 'activity_main.xml': 'H1'}
 for base in (ROOT / 'app/src/main/java', ROOT / 'app/src/main/res'):
     for path in sorted(base.rglob('*')):
         if not path.is_file() or path.suffix not in ('.kt', '.xml') or path.name in EMOJI_PENDING:
