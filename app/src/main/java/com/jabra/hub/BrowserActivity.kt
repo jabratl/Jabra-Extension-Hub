@@ -49,14 +49,23 @@ import java.util.Locale
 
 class BrowserActivity : AppCompatActivity() {
 
-    private lateinit var web: WebView
+    /** One browser tab: its WebView and the media found on its page. (0.9.7-T0: still only one tab exists.) */
+    internal class Tab(val web: WebView) {
+        val found = LinkedHashMap<String, Media>()
+    }
+
+    private val tabs = ArrayList<Tab>()
+    private var curTab: Tab? = null
+
+    /** The WebView of the current tab. Older code keeps using "web" and "found" unchanged. */
+    private val web: WebView get() = curTab!!.web
     private lateinit var urlBar: EditText
     private lateinit var chip: TextView
     private lateinit var panel: View
     private lateinit var panelList: LinearLayout
     private lateinit var progress: ProgressBar
     private lateinit var downloader: Downloader
-    private val found = LinkedHashMap<String, Media>()
+    private val found: LinkedHashMap<String, Media> get() = curTab!!.found
 
     private var adblock = true
     private var desktop = false
@@ -85,7 +94,7 @@ class BrowserActivity : AppCompatActivity() {
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
     /** Bridge used by the page script to report media. Only adds to the "found" list. */
-    inner class Sniff {
+    internal inner class Sniff(private val tab: Tab) {
         @JavascriptInterface
         fun found(u: String, hint: String) {
             if (!(u.startsWith("http://") || u.startsWith("https://"))) return
@@ -93,7 +102,7 @@ class BrowserActivity : AppCompatActivity() {
             if (k == null && hint == "av") k = "video"
             if (k == null) return
             if (adblock && AdBlock.isBlocked(u, Uri.parse(u).host)) return
-            onFound(u, k)
+            onFound(tab, u, k)
         }
 
         @JavascriptInterface
@@ -111,7 +120,9 @@ class BrowserActivity : AppCompatActivity() {
         adblock = BrowserStore.adblock(this)
         desktop = BrowserStore.desktop(this)
 
-        web = findViewById(R.id.web)
+        val first = Tab(findViewById(R.id.web))
+        tabs.add(first)
+        curTab = first
         urlBar = findViewById(R.id.url)
         chip = findViewById(R.id.chip)
         panel = findViewById(R.id.panel)
@@ -134,29 +145,50 @@ class BrowserActivity : AppCompatActivity() {
             } else false
         }
 
-        web.settings.javaScriptEnabled = true
-        web.settings.domStorageEnabled = true
-        web.settings.setSupportMultipleWindows(true)
-        web.settings.builtInZoomControls = true
-        web.settings.displayZoomControls = false
-        defaultUa = web.settings.userAgentString
-        applyDesktop()
+        setupTab(first)
+
+        onBackPressedDispatcher.addCallback(this) {
+            when {
+                customView != null -> exitFullscreen()
+                panel.visibility == View.VISIBLE -> hidePanel()
+                else -> goBack()
+            }
+        }
+
+        val start = intent.getStringExtra("url")
+            ?: BrowserStore.lastUrl(this)
+            ?: "https://duckduckgo.com"
+        web.loadUrl(start)
+    }
+
+    /** Everything a tab needs: WebView settings, scripts, and its own clients. */
+    @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
+    private fun setupTab(t: Tab) {
+        t.web.settings.javaScriptEnabled = true
+        t.web.settings.domStorageEnabled = true
+        t.web.settings.setSupportMultipleWindows(true)
+        t.web.settings.builtInZoomControls = true
+        t.web.settings.displayZoomControls = false
+        if (defaultUa.isEmpty()) defaultUa = t.web.settings.userAgentString
+        applyDesktop(t.web)
         CookieManager.getInstance().setAcceptCookie(true)
-        CookieManager.getInstance().setAcceptThirdPartyCookies(web, true)
-        web.addJavascriptInterface(Sniff(), "JabraSniff")
+        CookieManager.getInstance().setAcceptThirdPartyCookies(t.web, true)
+        t.web.addJavascriptInterface(Sniff(t), "JabraSniff")
 
         try {
             if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-                WebViewCompat.addDocumentStartJavaScript(web, AdBlock.PAGE_SCRIPT, setOf("*"))
+                WebViewCompat.addDocumentStartJavaScript(t.web, AdBlock.PAGE_SCRIPT, setOf("*"))
             }
         } catch (_: Exception) {
             // Falls back to the onPageFinished injection below.
         }
 
-        web.webChromeClient = object : WebChromeClient() {
+        t.web.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView, newProgress: Int) {
-                progress.progress = newProgress
-                progress.visibility = if (newProgress in 1..99) View.VISIBLE else View.GONE
+                if (t === curTab) {
+                    progress.progress = newProgress
+                    progress.visibility = if (newProgress in 1..99) View.VISIBLE else View.GONE
+                }
             }
 
             override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
@@ -173,11 +205,11 @@ class BrowserActivity : AppCompatActivity() {
                         if ((u.startsWith("http://") || u.startsWith("https://")) &&
                             !(adblock && AdBlock.isAdHost(request.url.host))
                         ) {
-                            web.post { web.loadUrl(u) }
+                            t.web.post { t.web.loadUrl(u) }
                         } else if (adblock) {
                             blockedCount++
                         }
-                        web.post { temp.destroy() }
+                        t.web.post { temp.destroy() }
                         return true
                     }
                 }
@@ -226,7 +258,7 @@ class BrowserActivity : AppCompatActivity() {
             }
         }
 
-        web.webViewClient = object : WebViewClient() {
+        t.web.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
                 val u = request.url.toString()
                 if (adblock && !request.isForMainFrame && AdBlock.isBlocked(u, request.url.host)) {
@@ -234,7 +266,7 @@ class BrowserActivity : AppCompatActivity() {
                     return AdBlock.empty()
                 }
                 val k = kindLoose(u)
-                if (k != null) onFound(u, k)
+                if (k != null) onFound(t, u, k)
                 return null
             }
 
@@ -251,43 +283,36 @@ class BrowserActivity : AppCompatActivity() {
             }
 
             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
-                urlBar.setText(url)
-                found.clear()
+                t.found.clear()
                 blockedCount = 0
-                updateChip()
-                if (panel.visibility == View.VISIBLE) showPanel()
+                if (t === curTab) {
+                    urlBar.setText(url)
+                    updateChip()
+                    if (panel.visibility == View.VISIBLE) showPanel()
+                }
             }
 
             override fun onPageFinished(view: WebView, url: String) {
                 // Fallback for WebViews without document-start scripts (the script guards against running twice).
                 view.evaluateJavascript(AdBlock.PAGE_SCRIPT, null)
                 BrowserStore.addHistory(this@BrowserActivity, url, view.title ?: "")
-                BrowserStore.setLastUrl(this@BrowserActivity, url)
+                if (t === curTab) BrowserStore.setLastUrl(this@BrowserActivity, url)
             }
         }
-        web.setDownloadListener { u, _, _, _, _ ->
-            onFound(u, "file")
+        t.web.setDownloadListener { u, _, _, _, _ ->
+            onFound(t, u, "file")
             Toast.makeText(this, "Added to the found list", Toast.LENGTH_SHORT).show()
         }
-
-        onBackPressedDispatcher.addCallback(this) {
-            when {
-                customView != null -> exitFullscreen()
-                panel.visibility == View.VISIBLE -> hidePanel()
-                else -> goBack()
-            }
-        }
-
-        val start = intent.getStringExtra("url")
-            ?: BrowserStore.lastUrl(this)
-            ?: "https://duckduckgo.com"
-        web.loadUrl(start)
     }
 
-    private fun applyDesktop() {
-        web.settings.userAgentString = if (desktop) desktopUa else defaultUa
-        web.settings.useWideViewPort = desktop
-        web.settings.loadWithOverviewMode = desktop
+    private fun applyDesktop(w: WebView) {
+        w.settings.userAgentString = if (desktop) desktopUa else defaultUa
+        w.settings.useWideViewPort = desktop
+        w.settings.loadWithOverviewMode = desktop
+    }
+
+    private fun applyDesktopAll() {
+        for (t in tabs) applyDesktop(t.web)
     }
 
     private fun exitFullscreen() {
@@ -360,7 +385,7 @@ class BrowserActivity : AppCompatActivity() {
                 7 -> {
                     desktop = !desktop
                     BrowserStore.setDesktop(this, desktop)
-                    applyDesktop()
+                    applyDesktopAll()
                     web.reload()
                 }
                 8 -> BrowserStore.setSaveHistory(this, !BrowserStore.saveHistory(this))
@@ -708,12 +733,14 @@ class BrowserActivity : AppCompatActivity() {
     // ---------- found media ----------
 
     /** Called from a background thread by the WebView. */
-    private fun onFound(url: String, kind: String) {
+    private fun onFound(tab: Tab, url: String, kind: String) {
         runOnUiThread {
-            if (found.containsKey(url) || found.size >= 200) return@runOnUiThread
-            found[url] = Media(url, kind, web.url ?: "", web.title ?: "")
-            updateChip()
-            if (panel.visibility == View.VISIBLE) showPanel()
+            if (tab.found.containsKey(url) || tab.found.size >= 200) return@runOnUiThread
+            tab.found[url] = Media(url, kind, tab.web.url ?: "", tab.web.title ?: "")
+            if (tab === curTab) {
+                updateChip()
+                if (panel.visibility == View.VISIBLE) showPanel()
+            }
         }
     }
 
@@ -883,17 +910,17 @@ class BrowserActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
-        web.onPause()
+        for (t in tabs) t.web.onPause()
         super.onPause()
     }
 
     override fun onResume() {
         super.onResume()
-        web.onResume()
+        curTab?.web?.onResume()
     }
 
     override fun onDestroy() {
-        web.destroy()
+        for (t in tabs) t.web.destroy()
         super.onDestroy()
     }
 }
