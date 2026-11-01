@@ -28,6 +28,7 @@ import android.webkit.WebView
 import android.webkit.ValueCallback
 import android.webkit.WebViewClient
 import android.widget.ArrayAdapter
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -80,6 +81,11 @@ class BrowserActivity : AppCompatActivity() {
     private lateinit var progress: ProgressBar
     private lateinit var downloader: Downloader
     private val found: LinkedHashMap<String, Media> get() = curTab!!.found
+
+    // media panel: filter, selection (Hub 0.9.11)
+    private var panelFilter = "all"
+    private var selectMode = false
+    private val selected = HashSet<String>()
 
     // find in page, dark pages (Hub 0.9.10)
     private var findBar: LinearLayout? = null
@@ -451,6 +457,8 @@ class BrowserActivity : AppCompatActivity() {
         val old = curTab
         if (old === t) return
         if (findBar != null) hideFind()
+        selected.clear()
+        selectMode = false
         if (old != null) {
             old.web.evaluateJavascript("document.querySelectorAll('video,audio').forEach(function(m){try{m.pause()}catch(e){}})", null)
             old.web.onPause()
@@ -1305,7 +1313,9 @@ class BrowserActivity : AppCompatActivity() {
         panel.visibility = View.VISIBLE
         chip.visibility = View.GONE
         panelList.removeAllViews()
+        selected.retainAll(found.keys)
         if (found.isEmpty()) {
+            selectMode = false
             panelList.addView(TextView(this).apply {
                 text = "Nothing found yet. Play a video on the page and it will show up here."
                 setTextColor(getColor(R.color.br_sub))
@@ -1313,7 +1323,70 @@ class BrowserActivity : AppCompatActivity() {
             })
             return
         }
-        for (m in found.values.reversed()) {
+        if (panelFilter != "all" && found.values.none { it.kind == panelFilter }) panelFilter = "all"
+        val shown = found.values.reversed().filter { panelFilter == "all" || it.kind == panelFilter }
+        val dp = resources.displayMetrics.density
+        val accent = 0xFF7C8CFF.toInt()
+        val rows = ArrayList<Pair<Media, CheckBox>>()
+
+        fun targets(): List<Media> = if (selectMode && selected.isNotEmpty()) shown.filter { it.url in selected } else shown
+
+        fun action(label: String, onClick: () -> Unit): TextView {
+            val b = TextView(this)
+            b.text = label
+            b.textSize = 14f
+            b.setTextColor(accent)
+            b.setPadding((10 * dp).toInt(), (8 * dp).toInt(), (10 * dp).toInt(), (8 * dp).toInt())
+            b.setOnClickListener { onClick() }
+            return b
+        }
+
+        val header = LinearLayout(this)
+        header.orientation = LinearLayout.VERTICAL
+        val filterBtn = action("Show: " + (if (panelFilter == "all") "All" else panelFilter) + " (${shown.size}) \u25BE") { chooseMediaFilter() }
+        header.addView(filterBtn)
+
+        val bar = LinearLayout(this)
+        bar.orientation = LinearLayout.HORIZONTAL
+        val selBtn = action(if (selectMode) "\u2715 Done" else "\u2611 Select") {
+            selectMode = !selectMode
+            if (!selectMode) selected.clear()
+            showPanel()
+        }
+        val allBtn = action("All") {}
+        val copyBtn = action("") { copyLinks(targets()) }
+        val sendBtn = action("") { sendToGrabber(targets()) }
+        fun refresh() {
+            val n = targets().size
+            copyBtn.text = "Copy ($n)"
+            sendBtn.text = "\u279C Grabber ($n)"
+            allBtn.text = if (shown.isNotEmpty() && shown.all { it.url in selected }) "None" else "All"
+        }
+        allBtn.setOnClickListener {
+            val every = shown.isNotEmpty() && shown.all { it.url in selected }
+            if (every) selected.removeAll(shown.map { it.url }.toSet()) else selected.addAll(shown.map { it.url })
+            for ((m, cb) in rows) cb.isChecked = m.url in selected
+            refresh()
+        }
+        allBtn.visibility = if (selectMode) View.VISIBLE else View.GONE
+        bar.addView(selBtn)
+        bar.addView(allBtn)
+        bar.addView(copyBtn)
+        bar.addView(sendBtn)
+        header.addView(bar)
+        panelList.addView(header)
+        refresh()
+
+        if (shown.isEmpty()) {
+            panelList.addView(TextView(this).apply {
+                text = "No items of this type."
+                setTextColor(getColor(R.color.br_sub))
+                textSize = 14f
+            })
+            return
+        }
+
+        for (m in shown) {
             val v = layoutInflater.inflate(R.layout.item_media, panelList, false)
             val seg = Uri.parse(m.url).lastPathSegment ?: m.url
             v.findViewById<TextView>(R.id.mname).text = seg
@@ -1335,7 +1408,104 @@ class BrowserActivity : AppCompatActivity() {
             btn.setOnClickListener {
                 if (m.kind == "hls") askHls(m, btn, status) else startDl(m, DlOptions(), btn, status)
             }
-            panelList.addView(v)
+            v.setOnLongClickListener {
+                mediaActions(m)
+                true
+            }
+
+            val cb = CheckBox(this)
+            cb.visibility = if (selectMode) View.VISIBLE else View.GONE
+            cb.isChecked = m.url in selected
+            cb.setOnCheckedChangeListener { _, on ->
+                if (on) selected.add(m.url) else selected.remove(m.url)
+                refresh()
+            }
+            rows.add(Pair(m, cb))
+            val row = LinearLayout(this)
+            row.orientation = LinearLayout.HORIZONTAL
+            row.gravity = Gravity.CENTER_VERTICAL
+            row.addView(cb)
+            row.addView(v, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            panelList.addView(row)
+        }
+    }
+
+    private fun chooseMediaFilter() {
+        val counts = found.values.groupingBy { it.kind }.eachCount()
+        val kinds = listOf("all") + counts.keys.sorted()
+        val labels = kinds.map { if (it == "all") "All (${found.size})" else "$it (${counts[it]})" }.toTypedArray()
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Show")
+            .setSingleChoiceItems(labels, kinds.indexOf(panelFilter).coerceAtLeast(0)) { d, i ->
+                panelFilter = kinds[i]
+                d.dismiss()
+                showPanel()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun copyLinks(list: List<Media>) {
+        if (list.isEmpty()) {
+            Toast.makeText(this, "No links to copy", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        cm.setPrimaryClip(ClipData.newPlainText("links", list.joinToString("\n") { it.url }))
+        Toast.makeText(this, "${list.size} link(s) copied", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun mediaActions(m: Media) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle((Uri.parse(m.url).lastPathSegment ?: m.url).take(80))
+            .setItems(arrayOf("Copy link", "Send to Media Grabber")) { _, i ->
+                if (i == 0) copyLinks(listOf(m)) else sendToGrabber(listOf(m))
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /**
+     * Hands the links to a plugin that accepts shared links (Media Grabber), the same way the Android
+     * Share sheet does (ShareActivity): Floater.save(..., "share"), then the plugin opens. Nothing downloads by itself.
+     */
+    private fun sendToGrabber(list: List<Media>) {
+        if (list.isEmpty()) {
+            Toast.makeText(this, "No links to send", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val plugins = try {
+            PluginStore(this).list().filter { Floater.acceptsShare(this, it.id) }
+        } catch (e: Exception) {
+            AppDiagnostics.record(applicationContext, "Browser: plugin list failed", e)
+            emptyList()
+        }
+        val title = (web.title ?: "").replace('\n', ' ').trim().take(120)
+        val text = (if (title.isNotEmpty()) title + "\n" else "") + list.joinToString("\n") { it.url }
+        fun deliver(id: String, name: String, entry: String) {
+            try {
+                Floater.save(applicationContext, id, text, "share")
+            } catch (e: Exception) {
+                AppDiagnostics.record(applicationContext, "Browser: send to plugin failed: $id", e)
+                Toast.makeText(this, "Could not hand over the links", Toast.LENGTH_LONG).show()
+                return
+            }
+            startActivity(
+                Intent(this, PluginActivity::class.java)
+                    .putExtra("id", id)
+                    .putExtra("name", name)
+                    .putExtra("entry", entry)
+                    .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            )
+        }
+        when (plugins.size) {
+            0 -> Toast.makeText(this, "No installed plugin accepts shared links yet. Install or update Media Grabber.", Toast.LENGTH_LONG).show()
+            1 -> deliver(plugins[0].id, plugins[0].name, plugins[0].entry)
+            else -> MaterialAlertDialogBuilder(this)
+                .setTitle("Send ${list.size} link(s) to")
+                .setItems(plugins.map { it.name }.toTypedArray()) { _, i -> deliver(plugins[i].id, plugins[i].name, plugins[i].entry) }
+                .setNegativeButton("Cancel", null)
+                .show()
         }
     }
 
